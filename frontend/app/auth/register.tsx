@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ImageBackground, ActivityIndicator, ScrollView,
+  KeyboardAvoidingView, Platform, ImageBackground, ActivityIndicator, ScrollView, Image,
 } from "react-native";
 import { useRouter, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,6 +9,7 @@ import { useAuth } from "../../src/auth";
 import { colors, spacing, radius } from "../../src/theme";
 
 const BG = "https://static.prod-images.emergentagent.com/jobs/8adc407e-78d5-4c4a-a0ab-529e6e00cf8a/images/a238f86d957f876ba9518cb174f6b8b214738206984cd6be59dbdcdffeaa7c3a.png";
+const BRAND_LOGO = require("../../assets/images/quest-icon.png");
 
 export default function Register() {
   const router = useRouter();
@@ -42,7 +43,7 @@ export default function Register() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.brand}>
-            <View style={styles.logoDot}><Ionicons name="compass" size={28} color="#000" /></View>
+            <Image source={BRAND_LOGO} style={styles.logoImg} resizeMode="contain" />
             <Text style={styles.brandText}>Join OnQuest</Text>
             <Text style={styles.tagline}>Become an explorer</Text>
           </View>
@@ -83,10 +84,10 @@ const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: colors.bg },
   container: { flexGrow: 1, padding: spacing.lg, justifyContent: "center" },
   brand: { alignItems: "center", marginBottom: spacing.xl },
+  logoImg: { width: 64, height: 64, tintColor: colors.primary, marginBottom: spacing.md },
   logoDot: {
     width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary,
     alignItems: "center", justifyContent: "center", marginBottom: spacing.md,
-    shadowColor: colors.primary, shadowOpacity: 0.6, shadowRadius: 18, shadowOffset: { width: 0, height: 0 },
   },
   brandText: { color: colors.text, fontSize: 28, fontWeight: "900", letterSpacing: -1 },
   tagline: { color: colors.textSecondary, marginTop: 6, letterSpacing: 1.5, fontSize: 11, textTransform: "uppercase" },

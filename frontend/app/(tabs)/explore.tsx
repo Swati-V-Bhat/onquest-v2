@@ -10,6 +10,8 @@ import api from "../../src/api";
 import QuestCard, { QuestSummary } from "../../src/QuestCard";
 import { colors, spacing, radius } from "../../src/theme";
 
+const BRAND_LOGO = require("../../assets/images/quest-icon.png");
+
 const HERO = "https://images.unsplash.com/photo-1518495973542-4542c06a5843?q=80&w=1200&auto=format&fit=crop";
 const FALLBACK = "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=2021&auto=format&fit=crop";
 
@@ -78,7 +80,7 @@ export default function Explore() {
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xl }}>
         <View style={styles.topRow}>
           <View style={styles.brandRow}>
-            <View style={styles.logoDot}><Ionicons name="compass" size={14} color="#000" /></View>
+            <Image source={BRAND_LOGO} style={styles.brandLogo} resizeMode="contain" />
             <Text style={styles.brandText}>OnQuest</Text>
           </View>
           <View style={styles.iconRow}>
@@ -283,6 +285,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
   },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  brandLogo: { width: 28, height: 28, tintColor: colors.primary },
   logoDot: {
     width: 24, height: 24, borderRadius: 12, backgroundColor: colors.primary,
     alignItems: "center", justifyContent: "center",

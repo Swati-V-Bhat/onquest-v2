@@ -10,6 +10,8 @@ import api from "../../src/api";
 import QuestCard, { QuestSummary } from "../../src/QuestCard";
 import { colors, spacing, radius } from "../../src/theme";
 
+const BRAND_LOGO = require("../../assets/images/quest-icon.png");
+
 const HERO_BG = "https://images.unsplash.com/photo-1739369984570-aff23bb45d9a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwzfHx0cmF2ZWxlciUyMG1vdW50YWluJTIwYWR2ZW50dXJlJTIwc3Vuc2V0fGVufDB8fHx8MTc3Nzk5NDQyN3ww&ixlib=rb-4.1.0&q=85";
 const FALLBACK_DEST = "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=2021&auto=format&fit=crop";
 
@@ -77,7 +79,7 @@ export default function QuestTab() {
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xl }}>
         <View style={styles.topRow}>
           <View style={styles.brandRow}>
-            <View style={styles.logoDot}><Ionicons name="compass" size={16} color="#000" /></View>
+            <Image source={BRAND_LOGO} style={styles.brandLogo} resizeMode="contain" />
             <Text style={styles.brandText}>OnQuest</Text>
           </View>
           <View style={styles.iconRow}>
@@ -159,6 +161,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
   },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  brandLogo: { width: 30, height: 30, tintColor: colors.primary },
   logoDot: {
     width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primary,
     alignItems: "center", justifyContent: "center",
