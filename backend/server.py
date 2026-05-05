@@ -306,32 +306,55 @@ async def ai_summary(quest_id: str, user=Depends(get_current_user)):
 # -----------------------------
 # Users
 # -----------------------------
+CURATED_DESTINATIONS = [
+    {"name": "Manali",        "image": "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Spiti Valley",  "image": "https://images.unsplash.com/photo-1626714555274-8e0d4f0e2d9d?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Ladakh",        "image": "https://images.unsplash.com/photo-1591516954303-1a2adc5d5fa5?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Goa",           "image": "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Jaipur",        "image": "https://images.unsplash.com/photo-1477587458883-47145ed94245?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Udaipur",       "image": "https://images.unsplash.com/photo-1599661046289-e31897846e41?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Kerala",        "image": "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Munnar",        "image": "https://images.unsplash.com/photo-1582510003544-4d00b7f74220?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Alleppey",      "image": "https://images.unsplash.com/photo-1611516491426-03025e6043c8?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Rishikesh",     "image": "https://images.unsplash.com/photo-1591018653308-fed4ad520fa1?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Varanasi",      "image": "https://images.unsplash.com/photo-1561361398-a8b0d3c1d8cf?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Hampi",         "image": "https://images.unsplash.com/photo-1606298855672-3efb63017be8?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Coorg",         "image": "https://images.unsplash.com/photo-1599629954294-14df9ec8bc03?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Gokarna",       "image": "https://images.unsplash.com/photo-1580836623504-2cf75bcf0a6e?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Pondicherry",   "image": "https://images.unsplash.com/photo-1517400508447-f8dd518b86db?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Andaman",       "image": "https://images.unsplash.com/photo-1583212292454-1fe6229603b7?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Darjeeling",    "image": "https://images.unsplash.com/photo-1605649461784-4cb5cdee0d65?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Auli",          "image": "https://images.unsplash.com/photo-1605649461858-87c0a1086f8b?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Mahabaleshwar", "image": "https://images.unsplash.com/photo-1591018653308-fed4ad520fa1?q=80&w=1200&auto=format&fit=crop"},
+    {"name": "Mussoorie",     "image": "https://images.unsplash.com/photo-1605649461858-87c0a1086f8b?q=80&w=1200&auto=format&fit=crop"},
+]
+
 @api_router.get("/popular-destinations")
-async def popular_destinations(limit: int = 12):
-    pipeline = [
-        {"$unwind": "$nodes"},
-        {"$match": {"nodes.location_name": {"$nin": [None, ""]}}},
-        {"$group": {
-            "_id": "$nodes.location_name",
-            "quest_count": {"$addToSet": "$id"},
-            "sample_photo": {"$first": "$nodes.photo_base64"},
-            "sample_cover": {"$first": "$cover_photo_base64"},
-            "lat": {"$first": "$nodes.lat"},
-            "lng": {"$first": "$nodes.lng"},
-        }},
-        {"$project": {
-            "_id": 0,
-            "location_name": "$_id",
-            "quest_count": {"$size": "$quest_count"},
-            "sample_photo": 1,
-            "sample_cover": 1,
-            "lat": 1,
-            "lng": 1,
-        }},
-        {"$sort": {"quest_count": -1}},
-        {"$limit": limit},
-    ]
-    return await db.quests.aggregate(pipeline).to_list(length=limit)
+async def popular_destinations(limit: int = 20):
+    out = []
+    for dest in CURATED_DESTINATIONS:
+        regex = {"$regex": dest["name"], "$options": "i"}
+        # count quests that have at least one node matching this destination,
+        # OR whose title/description mentions it
+        count = await db.quests.count_documents({
+            "$or": [
+                {"nodes.location_name": regex},
+                {"title": regex},
+                {"description": regex},
+            ]
+        })
+        if count == 0:
+            continue
+        out.append({
+            "location_name": dest["name"],
+            "quest_count": count,
+            "sample_photo": dest["image"],
+            "sample_cover": dest["image"],
+            "lat": None,
+            "lng": None,
+        })
+    out.sort(key=lambda d: -d["quest_count"])
+    return out[:limit]
 
 @api_router.get("/leaderboard")
 async def leaderboard(limit: int = 20):
