@@ -1,22 +1,27 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "OnQuest",
+    "slug": "onquest",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "onquest",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Pin your travel stops on a quest map",
+        "NSPhotoLibraryUsageDescription": "Add photos to your travel quest"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#0A0A0A"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "READ_MEDIA_IMAGES"]
     },
     "web": {
       "bundler": "metro",
@@ -31,7 +36,19 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#0A0A0A"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Add photos to your travel quest"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Pin your travel stops on a quest map"
         }
       ]
     ],
