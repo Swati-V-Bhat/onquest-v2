@@ -26,7 +26,7 @@ export default function TabsLayout() {
           backgroundColor: "#0E0F11",
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 62,
+          height: 64,
           paddingBottom: 8,
           paddingTop: 6,
         },
@@ -36,8 +36,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="feed"
         options={{
-          title: "Feed",
-          tabBarIcon: ({ color, size }) => <Ionicons name="planet-outline" size={size} color={color} />,
+          title: "Home",
+          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -50,14 +50,21 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="create"
         options={{
-          title: "Create",
-          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size + 8} color={colors.primary} />,
+          title: "Post",
+          tabBarIcon: ({ color, size }) => <Ionicons name="add" size={size + 6} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="quest"
+        options={{
+          title: "Quest",
+          tabBarIcon: ({ color, size }) => <Ionicons name="compass" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          title: "Account",
           tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" size={size} color={color} />,
         }}
       />

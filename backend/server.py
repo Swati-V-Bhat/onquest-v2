@@ -306,6 +306,33 @@ async def ai_summary(quest_id: str, user=Depends(get_current_user)):
 # -----------------------------
 # Users
 # -----------------------------
+@api_router.get("/popular-destinations")
+async def popular_destinations(limit: int = 12):
+    pipeline = [
+        {"$unwind": "$nodes"},
+        {"$match": {"nodes.location_name": {"$nin": [None, ""]}}},
+        {"$group": {
+            "_id": "$nodes.location_name",
+            "quest_count": {"$addToSet": "$id"},
+            "sample_photo": {"$first": "$nodes.photo_base64"},
+            "sample_cover": {"$first": "$cover_photo_base64"},
+            "lat": {"$first": "$nodes.lat"},
+            "lng": {"$first": "$nodes.lng"},
+        }},
+        {"$project": {
+            "_id": 0,
+            "location_name": "$_id",
+            "quest_count": {"$size": "$quest_count"},
+            "sample_photo": 1,
+            "sample_cover": 1,
+            "lat": 1,
+            "lng": 1,
+        }},
+        {"$sort": {"quest_count": -1}},
+        {"$limit": limit},
+    ]
+    return await db.quests.aggregate(pipeline).to_list(length=limit)
+
 @api_router.get("/users/{user_id}")
 async def get_user(user_id: str):
     u = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
