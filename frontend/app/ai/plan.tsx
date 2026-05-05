@@ -40,6 +40,7 @@ export default function AIPlan() {
   const [transport, setTransport] = useState("Mixed");
   const [groupType, setGroupType] = useState("Solo");
   const [vibes, setVibes] = useState<string[]>([]);
+  const [customVibe, setCustomVibe] = useState("");
   const [notes, setNotes] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -150,6 +151,15 @@ export default function AIPlan() {
                   <Chip key={b} active={budget === b} onPress={() => setBudget(b)}>{b}</Chip>
                 ))}
               </View>
+              <Text style={[styles.sub, { marginTop: spacing.lg }]}>Or describe your own</Text>
+              <TextInput
+                testID="ai-custom-budget"
+                style={styles.input}
+                placeholder="e.g. INR 25,000 / Backpacker / All inclusive"
+                placeholderTextColor={colors.textMuted}
+                value={budget}
+                onChangeText={setBudget}
+              />
             </Card>
           )}
 
@@ -162,6 +172,15 @@ export default function AIPlan() {
                   <Chip key={t} active={transport === t} onPress={() => setTransport(t)}>{t}</Chip>
                 ))}
               </View>
+              <Text style={[styles.sub, { marginTop: spacing.lg }]}>Or describe your own</Text>
+              <TextInput
+                testID="ai-custom-transport"
+                style={styles.input}
+                placeholder="e.g. Bullet ride / Private cab / Cycle tour"
+                placeholderTextColor={colors.textMuted}
+                value={transport}
+                onChangeText={setTransport}
+              />
             </Card>
           )}
 
@@ -174,6 +193,15 @@ export default function AIPlan() {
                   <Chip key={g} active={groupType === g} onPress={() => setGroupType(g)}>{g}</Chip>
                 ))}
               </View>
+              <Text style={[styles.sub, { marginTop: spacing.lg }]}>Or describe your own</Text>
+              <TextInput
+                testID="ai-custom-group"
+                style={styles.input}
+                placeholder="e.g. Group of 6 college friends / Honeymoon"
+                placeholderTextColor={colors.textMuted}
+                value={groupType}
+                onChangeText={setGroupType}
+              />
             </Card>
           )}
 
@@ -185,6 +213,34 @@ export default function AIPlan() {
                 {VIBES.map((v) => (
                   <Chip key={v} active={vibes.includes(v)} onPress={() => toggleVibe(v)}>{v}</Chip>
                 ))}
+              </View>
+              <Text style={[styles.sub, { marginTop: spacing.lg }]}>Add custom vibes</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TextInput
+                  testID="ai-custom-vibe"
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="e.g. Photography, Birdwatching"
+                  placeholderTextColor={colors.textMuted}
+                  value={customVibe}
+                  onChangeText={setCustomVibe}
+                  onSubmitEditing={() => {
+                    const v = customVibe.trim();
+                    if (v && !vibes.includes(v)) setVibes([...vibes, v]);
+                    setCustomVibe("");
+                  }}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity
+                  testID="ai-add-vibe-btn"
+                  style={styles.addVibeBtn}
+                  onPress={() => {
+                    const v = customVibe.trim();
+                    if (v && !vibes.includes(v)) setVibes([...vibes, v]);
+                    setCustomVibe("");
+                  }}
+                >
+                  <Ionicons name="add" size={20} color="#000" />
+                </TouchableOpacity>
               </View>
               <Text style={[styles.sub, { marginTop: spacing.lg }]}>Anything else? (optional)</Text>
               <TextInput
@@ -407,6 +463,10 @@ const styles = StyleSheet.create({
   chipText: { color: colors.text, fontWeight: "700" },
   chipTextActive: { color: "#000" },
   helper: { color: colors.primary, fontWeight: "700", marginTop: spacing.sm, fontSize: 12, letterSpacing: 0.5 },
+  addVibeBtn: {
+    width: 50, height: 50, borderRadius: 25, backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
+  },
   error: { color: colors.danger, marginVertical: spacing.sm },
   actionsRow: { flexDirection: "row", gap: 10, marginTop: spacing.md },
   primaryBtn: {
