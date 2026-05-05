@@ -550,7 +550,6 @@ async def plan_trip(payload: TripPlanIn):
     dest = payload.destination.strip()
     if not dest:
         raise HTTPException(status_code=400, detail="Destination is required")
-
     # 1. Find matching quests in our DB
     regex = {"$regex": dest, "$options": "i"}
     matches_cursor = db.quests.find({
