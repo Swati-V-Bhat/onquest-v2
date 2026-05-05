@@ -270,20 +270,26 @@ function MiniQuest({ quest, onPress }: { quest: QuestSummary; onPress: () => voi
 }
 
 function DestinationCard({ dest }: { dest: Destination }) {
+  const router = useRouter();
   const photo = dest.sample_photo
     ? (dest.sample_photo.startsWith("http") ? dest.sample_photo : `data:image/jpeg;base64,${dest.sample_photo}`)
     : dest.sample_cover
     ? (dest.sample_cover.startsWith("http") ? dest.sample_cover : `data:image/jpeg;base64,${dest.sample_cover}`)
     : FALLBACK;
   return (
-    <View style={styles.destCard}>
+    <TouchableOpacity
+      testID={`explore-dest-${dest.location_name}`}
+      activeOpacity={0.85}
+      onPress={() => router.push(`/destination/${encodeURIComponent(dest.location_name)}`)}
+      style={styles.destCard}
+    >
       <Image source={{ uri: photo }} style={styles.destImg} />
       <View style={styles.destOverlay} />
       <View style={styles.destText}>
         <Text style={styles.destName} numberOfLines={3}>{dest.location_name}</Text>
         <Text style={styles.destCount}>{dest.quest_count} quest{dest.quest_count === 1 ? "" : "s"}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

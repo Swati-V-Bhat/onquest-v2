@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import api from "../../src/api";
 import QuestCard, { QuestSummary } from "../../src/QuestCard";
 import { colors, spacing, radius } from "../../src/theme";
@@ -33,8 +33,9 @@ type Plan = {
 
 export default function AIPlan() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ dest?: string }>();
   const [step, setStep] = useState(0);
-  const [destination, setDestination] = useState("");
+  const [destination, setDestination] = useState(params?.dest ? String(params.dest) : "");
   const [duration, setDuration] = useState(3);
   const [budget, setBudget] = useState("Mid");
   const [transport, setTransport] = useState("Mixed");

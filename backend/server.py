@@ -393,6 +393,126 @@ async def recommendations(limit: int = 10):
     quests = await cursor.to_list(length=limit)
     return [await _enrich_quest(qd) for qd in quests]
 
+# Static info for popular Indian destinations.
+DESTINATION_INFO = {
+    "manali": {"region": "Himachal Pradesh", "best_time": "October to June", "vibe": "Mountains · Adventure · Cafes",
+        "about": "Tucked in the Beas valley, Manali is the gateway to high-altitude rides, snow-filled passes and apple-orchard cafes. Riders cross Atal Tunnel into Lahaul, trekkers head to Bhrigu and Hampta, and slow travellers settle into Old Manali for chai and bonfires.",
+        "tips": ["Carry layered woolens even in summer", "Atal Tunnel toll is FREE", "Negotiate cab rates before boarding"]},
+    "spiti": {"region": "Himachal Pradesh", "best_time": "May to October", "vibe": "Cold desert · Monasteries",
+        "about": "A Buddhist desert above 10,000ft. Whitewashed monasteries, fossil villages, the moon-lake of Chandratal, and dirt-track ride to Kibber make Spiti India's most surreal frontier.",
+        "tips": ["Acclimatise in Kaza for a day", "Carry cash — UPI is patchy", "Refuel at Kaza, Tabo and Reckong Peo"]},
+    "ladakh": {"region": "Ladakh", "best_time": "May to September", "vibe": "Highland · Bike trips · Lakes",
+        "about": "Ladakh is altitude in its purest form — Pangong's blue, Khardung La's snow, and Nubra's dunes. Whether you ride Manali-Leh or fly in, expect prayer flags, monasteries and AMS in equal measure.",
+        "tips": ["Take Diamox a day before flying in", "Inner Line Permits required for Pangong/Nubra", "Drink 4L water daily"]},
+    "rishikesh": {"region": "Uttarakhand", "best_time": "September to April", "vibe": "Yoga · Rafting · Spiritual",
+        "about": "Yoga capital of the world. Rafting on the Ganges, sunset Beatles Ashram graffiti, evening Triveni aarti, and German bakery breakfasts make it a perfect long weekend.",
+        "tips": ["Vegetarian-only food in town", "Rafting season: Sep-Jun", "Tapovan & Laxman Jhula are the best stays"]},
+    "varanasi": {"region": "Uttar Pradesh", "best_time": "October to March", "vibe": "Spiritual · Heritage · Photography",
+        "about": "The world's oldest living city. Sunrise boat rides past 88 ghats, evening Ganga aarti at Dashashwamedh, and the famous Blue Lassi — Kashi is sensory overload, in the best way.",
+        "tips": ["Always remove shoes before entering ghats", "Beware of touts at Manikarnika", "Try kachori-sabzi at Ram Bhandar"]},
+    "jaipur": {"region": "Rajasthan", "best_time": "October to March", "vibe": "Heritage · Food · Bazaars",
+        "about": "The Pink City — Amer Fort sunrises, Hawa Mahal at golden hour, Bapu Bazaar block-prints and night-time view from Nahargarh. The royal capital still wears its identity proudly.",
+        "tips": ["Take a guided heritage walk", "Lassi at Lassiwala (since 1944)", "Combo tickets save 50% on monuments"]},
+    "udaipur": {"region": "Rajasthan", "best_time": "October to March", "vibe": "Lakes · Romance · Heritage",
+        "about": "City of lakes — Pichola sunsets, City Palace terraces, vintage car museum, and rooftop dinners overlooking Lake Palace. Quietest of the Rajasthan triangle.",
+        "tips": ["Boat ride is best at sunset", "Stay in haveli hotels in Old City", "Visit Bagore ki Haveli for folk dance"]},
+    "goa": {"region": "Goa", "best_time": "November to February", "vibe": "Beaches · Music · Susegado",
+        "about": "Two distinct Goas — North for nightlife, hippie markets and shacks; South for slow Portuguese villages and empty beaches. Either way, you'll come back with sand in your shoes.",
+        "tips": ["Rent a scooter (INR 400/day)", "Avoid Calangute — try Vagator/Palolem", "Cashew feni is an acquired taste"]},
+    "kerala": {"region": "Kerala", "best_time": "September to March", "vibe": "Backwaters · Hills · Spices",
+        "about": "God's own country. Houseboats on Alleppey backwaters, tea estates in Munnar, Chinese fishing nets at Fort Kochi, and ayurvedic retreats — Kerala does slow travel like nobody else.",
+        "tips": ["Monsoon is a separate season here", "Try parotta with beef fry in Kochi", "Houseboat for one night is enough"]},
+    "munnar": {"region": "Kerala", "best_time": "September to May", "vibe": "Tea estates · Hills · Calm",
+        "about": "Endless rolling tea gardens at 6,000ft. Visit Kolukkumalai (highest tea estate in the world), spot Nilgiri tahr at Eravikulam, and stay at a homestay tucked into a plantation.",
+        "tips": ["Mornings are mistier than evenings", "Tea factory tours are worth it", "Carry warm clothes year-round"]},
+    "alleppey": {"region": "Kerala", "best_time": "August to March", "vibe": "Backwaters · Houseboats",
+        "about": "The Venice of the East. Float on a kettuvallam through coconut-fringed canals, see paddy fields below sea-level, eat karimeen pollichathu cooked onboard.",
+        "tips": ["Book the houseboat in advance", "Avoid weekends if possible", "Kuttanad has the best birding"]},
+    "hampi": {"region": "Karnataka", "best_time": "November to February", "vibe": "Boulders · UNESCO ruins · Hippie",
+        "about": "A 14th-century empire sprawled across boulder fields. Climb Matanga at sunrise, coracle to Hippie Island, and wander Vittala Temple's stone chariot — Hampi is timeless and otherworldly.",
+        "tips": ["Rent a moped or bicycle", "Cross-river by coracle (INR 20)", "Mango Tree cafe is iconic"]},
+    "coorg": {"region": "Karnataka", "best_time": "October to March", "vibe": "Coffee · Hills · Pork",
+        "about": "Scotland of India. Coffee plantations, Madikeri waterfalls, river rafting at Dubare, and authentic Kodava cuisine (pandi curry, akki roti). Long-weekend favourite from Bangalore.",
+        "tips": ["Stay at a plantation homestay", "Try filter coffee at the source", "Ayyappa idli for breakfast at any roadside"]},
+    "gokarna": {"region": "Karnataka", "best_time": "October to March", "vibe": "Beaches · Hippie · Treks",
+        "about": "Goa's quieter cousin. Trek between Om, Half-Moon and Paradise beaches, sleep in shacks, and visit the Mahabaleshwar temple — sacred and salty all at once.",
+        "tips": ["Stay near Kudle, not Gokarna town", "Beach trek takes 2-3 hours", "Carry water for the trek"]},
+    "pondicherry": {"region": "Tamil Nadu / Puducherry", "best_time": "October to March", "vibe": "French quarter · Beach · Cafes",
+        "about": "A French slice on the Coromandel coast. Cycle through pastel White Town, breakfast at Cafe des Arts, sunset at Promenade, and meditate at Auroville's Matrimandir.",
+        "tips": ["Stay in heritage homes in White Town", "Auroville requires advance booking for Matrimandir", "Try French pastries at Baker Street"]},
+    "andaman": {"region": "Andaman & Nicobar Islands", "best_time": "October to May", "vibe": "Islands · Diving · Beaches",
+        "about": "India's tropical paradise. Radhanagar (Asia's #1 beach), scuba over coral at Havelock, glass-bottom boats and bioluminescent kayaking — pristine, remote, unforgettable.",
+        "tips": ["Internet is patchy — disconnect", "Pre-book ferries for Havelock/Neil", "Try sea-food at Anju Coco"]},
+    "darjeeling": {"region": "West Bengal", "best_time": "October to May", "vibe": "Tea · Toy train · Mountains",
+        "about": "Tea, toy train and Tiger Hill sunrise over Kanchenjunga. Walk the Mall, breakfast at Glenary's, take the UNESCO Darjeeling Himalayan Railway to Ghum.",
+        "tips": ["Tiger Hill needs a 4am start", "Toy train tickets sell out fast", "Carry warm clothes Apr-May too"]},
+    "auli": {"region": "Uttarakhand", "best_time": "December to March (skiing); April to June", "vibe": "Skiing · Snow · Cable car",
+        "about": "India's premier ski destination. Asia's longest gondola, beginner slopes, and panoramic Himalayan views — pair it with Joshimath for a perfect winter weekend.",
+        "tips": ["Pre-book skiing & equipment", "Joshimath is the base town", "Combine with Valley of Flowers in Aug"]},
+    "mahabaleshwar": {"region": "Maharashtra", "best_time": "October to June", "vibe": "Strawberries · Hills · Forts",
+        "about": "Bombay's strawberry country. Mapro Garden, Pratapgad fort (Shivaji's), Arthur's Seat cliff and Venna Lake boating — a perfect monsoon and winter weekend escape.",
+        "tips": ["Strawberry season: Dec-Apr", "Carry an umbrella in monsoon", "Pratapgad fort is best at sunrise"]},
+    "mussoorie": {"region": "Uttarakhand", "best_time": "March to June; Sep to Nov", "vibe": "Hills · Cafes · Bookshops",
+        "about": "Queen of hills. Mall Road in the evening, Char Dukan in Landour, Cambridge Book Depot for a chance encounter with Ruskin Bond, and Kempty Falls for a refreshing dip.",
+        "tips": ["Visit Landour for the quiet vibe", "Char Dukan since 1947", "Avoid weekends — Delhi crowds"]},
+}
+
+def _dest_info_for(name: str) -> dict:
+    key = name.lower().split(",")[0].strip()
+    for k, v in DESTINATION_INFO.items():
+        if k in key or key in k:
+            return v
+    return {
+        "region": "India",
+        "best_time": "Year-round",
+        "vibe": "Travel · Discover",
+        "about": f"Discover the unique places, food and stories of {name} through the OnQuest community's journeys.",
+        "tips": ["Travel light", "Respect local customs", "Carry small change"],
+    }
+
+@api_router.get("/destinations/{name}")
+async def destination_detail(name: str):
+    # Find quests where any node has matching location_name (case-insensitive contains)
+    regex = {"$regex": name, "$options": "i"}
+    cursor = db.quests.find({"nodes.location_name": regex}, {"_id": 0}).sort("created_at", -1)
+    raw = await cursor.to_list(length=50)
+    quests = [await _enrich_quest(q) for q in raw]
+    # Hero photo: first matching node photo, fallback to first quest cover
+    hero = ""
+    lat = lng = None
+    matching_nodes = []
+    for q in raw:
+        for n in q.get("nodes", []):
+            if n.get("location_name") and name.lower() in n["location_name"].lower():
+                if not hero and n.get("photo_base64"):
+                    hero = n["photo_base64"]
+                if lat is None and n.get("lat") is not None:
+                    lat = n["lat"]
+                    lng = n["lng"]
+                matching_nodes.append({
+                    "title": n.get("title"),
+                    "description": n.get("description", ""),
+                    "type": n.get("type", "place"),
+                    "photo_base64": n.get("photo_base64", ""),
+                    "lat": n.get("lat"),
+                    "lng": n.get("lng"),
+                    "from_quest": q.get("title"),
+                })
+    if not hero and raw:
+        hero = raw[0].get("cover_photo_base64", "")
+    info = _dest_info_for(name)
+    return {
+        "location_name": name,
+        "hero": hero,
+        "lat": lat,
+        "lng": lng,
+        "quest_count": len(quests),
+        "stop_count": len(matching_nodes),
+        "info": info,
+        "quests": quests,
+        "stops": matching_nodes[:12],
+    }
+
 class TripPlanIn(BaseModel):
     destination: str
     duration_days: int = 3
