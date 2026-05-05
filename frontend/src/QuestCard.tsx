@@ -21,7 +21,7 @@ export type QuestSummary = {
 export default function QuestCard({ quest }: { quest: QuestSummary }) {
   const router = useRouter();
   const cover = quest.cover_photo_base64
-    ? `data:image/jpeg;base64,${quest.cover_photo_base64}`
+    ? (quest.cover_photo_base64.startsWith("http") ? quest.cover_photo_base64 : `data:image/jpeg;base64,${quest.cover_photo_base64}`)
     : FALLBACK_IMG;
   const stops = quest.nodes?.length || 0;
 

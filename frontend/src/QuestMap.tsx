@@ -29,13 +29,13 @@ function buildHtml(points: MapPoint[]) {
 <style>
   html, body, #map { height: 100%; margin: 0; padding: 0; background:#0A0A0A; }
   .num-pin {
-    background: #D4AF37;
-    color: #000;
+    background: #FF6900;
+    color: #fff;
     border-radius: 999px;
     width: 28px; height: 28px;
     display:flex; align-items:center; justify-content:center;
     font-weight: 800; font-family: -apple-system, system-ui, sans-serif;
-    box-shadow: 0 0 0 3px rgba(212,175,55,0.25), 0 6px 14px rgba(0,0,0,0.6);
+    box-shadow: 0 0 0 3px rgba(255,105,0,0.30), 0 6px 14px rgba(0,0,0,0.6);
     border: 1px solid #fff2;
   }
   .leaflet-container { background:#0A0A0A; }
@@ -63,7 +63,7 @@ function buildHtml(points: MapPoint[]) {
     latlngs.push([p.lat, p.lng]);
   });
   if (latlngs.length > 1) {
-    L.polyline(latlngs, { color: '#D4AF37', weight: 3, opacity: 0.9, dashArray: '6 8' }).addTo(map);
+    L.polyline(latlngs, { color: '#FF6900', weight: 3, opacity: 0.9, dashArray: '6 8' }).addTo(map);
     map.fitBounds(L.latLngBounds(latlngs).pad(0.3));
   } else if (latlngs.length === 1) {
     map.setView(latlngs[0], 11);

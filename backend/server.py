@@ -572,40 +572,9 @@ async def seed():
             {"$set": {"password_hash": hash_password(admin_password)}},
         )
 
-    # Seed a sample explorer if none
+    # Seed admin user only. Sample data is in /app/backend/seed_data.py
     explorer_email = "explorer@onquest.in"
-    explorer = await db.users.find_one({"email": explorer_email})
-    if explorer is None:
-        explorer_id = str(uuid.uuid4())
-        await db.users.insert_one({
-            "id": explorer_id,
-            "email": explorer_email,
-            "name": "Aria Walker",
-            "bio": "Mountains, maps, and momentum.",
-            "avatar": "",
-            "password_hash": hash_password("explorer123"),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "role": "user",
-        })
-        # Seed a sample quest
-        quest_id = str(uuid.uuid4())
-        await db.quests.insert_one({
-            "id": quest_id,
-            "user_id": explorer_id,
-            "title": "Himalayan Sunrise Trail",
-            "description": "A 3-day quest from the foothills to the first ridge of the Himalayas.",
-            "cover_photo_base64": "",
-            "nodes": [
-                {"id": str(uuid.uuid4()), "title": "Manali Base Camp", "description": "Start the journey at dawn.", "type": "place", "photo_base64": "", "lat": 32.2396, "lng": 77.1887, "location_name": "Manali, India", "order": 0},
-                {"id": str(uuid.uuid4()), "title": "Solang Valley Ride", "description": "Paragliding above pine forests.", "type": "activity", "photo_base64": "", "lat": 32.3193, "lng": 77.1573, "location_name": "Solang Valley", "order": 1},
-                {"id": str(uuid.uuid4()), "title": "Rohtang Pass", "description": "Snow at 13,000 ft.", "type": "place", "photo_base64": "", "lat": 32.3667, "lng": 77.2467, "location_name": "Rohtang Pass", "order": 2},
-            ],
-            "ai_summary": "",
-            "likes": [],
-            "comments": [],
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-        logger.info("Seeded sample quest")
+    await db.users.delete_one({"email": explorer_email})
 
 @app.on_event("startup")
 async def on_startup():

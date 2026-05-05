@@ -238,7 +238,9 @@ function HorizontalRail<T>({ data, renderItem, emptyText }: { data: T[]; renderI
 }
 
 function MiniQuest({ quest, onPress }: { quest: QuestSummary; onPress: () => void }) {
-  const cover = quest.cover_photo_base64 ? `data:image/jpeg;base64,${quest.cover_photo_base64}` : FALLBACK;
+  const cover = quest.cover_photo_base64
+    ? (quest.cover_photo_base64.startsWith("http") ? quest.cover_photo_base64 : `data:image/jpeg;base64,${quest.cover_photo_base64}`)
+    : FALLBACK;
   return (
     <TouchableOpacity testID={`mini-quest-${quest.id}`} activeOpacity={0.85} onPress={onPress} style={styles.mini}>
       <ImageBackground source={{ uri: cover }} style={styles.miniImg} imageStyle={{ borderRadius: radius.lg }}>
@@ -258,9 +260,9 @@ function MiniQuest({ quest, onPress }: { quest: QuestSummary; onPress: () => voi
 
 function DestinationCard({ dest }: { dest: Destination }) {
   const photo = dest.sample_photo
-    ? `data:image/jpeg;base64,${dest.sample_photo}`
+    ? (dest.sample_photo.startsWith("http") ? dest.sample_photo : `data:image/jpeg;base64,${dest.sample_photo}`)
     : dest.sample_cover
-    ? `data:image/jpeg;base64,${dest.sample_cover}`
+    ? (dest.sample_cover.startsWith("http") ? dest.sample_cover : `data:image/jpeg;base64,${dest.sample_cover}`)
     : FALLBACK;
   return (
     <View style={styles.destCard}>

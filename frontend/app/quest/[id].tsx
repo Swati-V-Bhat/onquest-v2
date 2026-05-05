@@ -68,7 +68,7 @@ export default function QuestDetail() {
   }
 
   const cover = quest.cover_photo_base64
-    ? `data:image/jpeg;base64,${quest.cover_photo_base64}`
+    ? (quest.cover_photo_base64.startsWith("http") ? quest.cover_photo_base64 : `data:image/jpeg;base64,${quest.cover_photo_base64}`)
     : FALLBACK;
   const points = (quest.nodes || [])
     .filter((n: any) => typeof n.lat === "number" && typeof n.lng === "number")
@@ -157,7 +157,7 @@ export default function QuestDetail() {
                   ) : null}
                   {n.description ? <Text style={styles.nodeDesc}>{n.description}</Text> : null}
                   {n.photo_base64 ? (
-                    <Image source={{ uri: `data:image/jpeg;base64,${n.photo_base64}` }} style={styles.nodeImg} />
+                    <Image source={{ uri: n.photo_base64.startsWith("http") ? n.photo_base64 : `data:image/jpeg;base64,${n.photo_base64}` }} style={styles.nodeImg} />
                   ) : null}
                 </View>
               </View>

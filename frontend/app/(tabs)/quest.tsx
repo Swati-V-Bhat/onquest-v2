@@ -136,9 +136,9 @@ export default function QuestTab() {
 
 function DestinationCard({ dest }: { dest: Destination }) {
   const photo = dest.sample_photo
-    ? `data:image/jpeg;base64,${dest.sample_photo}`
+    ? (dest.sample_photo.startsWith("http") ? dest.sample_photo : `data:image/jpeg;base64,${dest.sample_photo}`)
     : dest.sample_cover
-    ? `data:image/jpeg;base64,${dest.sample_cover}`
+    ? (dest.sample_cover.startsWith("http") ? dest.sample_cover : `data:image/jpeg;base64,${dest.sample_cover}`)
     : FALLBACK_DEST;
   return (
     <View style={styles.destCard}>
