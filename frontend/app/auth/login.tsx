@@ -13,8 +13,8 @@ const BG = "https://static.prod-images.emergentagent.com/jobs/8adc407e-78d5-4c4a
 export default function Login() {
   const router = useRouter();
   const { login } = useAuth();
-  const [email, setEmail] = useState("explorer@onquest.in");
-  const [password, setPassword] = useState("explorer123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
