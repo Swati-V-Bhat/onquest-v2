@@ -1,0 +1,147 @@
+{
+  "app_name": "OnQuest",
+  "description": "A beautiful mobile-first travel social app where users post travel journeys in a flowchart-based format integrated with maps.",
+  "theme": {
+    "mode": "dark",
+    "archetype": "Archetype 5 (Jewel & Luxury) / Archetype 2 (Performance Pro) hybrid",
+    "vibe": "Premium, adventurous, cinematic, mysterious, and highly structured. Feels like a high-end expedition log."
+  },
+  "colors": {
+    "background": {
+      "base": "#0A0A0A",
+      "surface": "#121415",
+      "surface_elevated": "#1C1F22",
+      "glass": "rgba(28, 31, 34, 0.6)"
+    },
+    "primary": {
+      "default": "#D4AF37",
+      "hover": "#F0E68C",
+      "glow": "rgba(212, 175, 55, 0.4)"
+    },
+    "secondary": {
+      "default": "#2C3E2D",
+      "hover": "#3A533C"
+    },
+    "text": {
+      "primary": "#F9FAFB",
+      "secondary": "#9CA3AF",
+      "muted": "#6B7280",
+      "inverse": "#000000"
+    },
+    "border": {
+      "subtle": "rgba(255, 255, 255, 0.1)",
+      "focus": "#D4AF37"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "headings": "'Cabinet Grotesk', sans-serif",
+      "body": "'Manrope', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "scales": {
+      "h1": "text-4xl tracking-tighter font-black",
+      "h2": "text-3xl tracking-tight font-bold",
+      "h3": "text-2xl tracking-tight font-semibold",
+      "body": "text-base leading-relaxed text-gray-300",
+      "small": "text-sm text-gray-400",
+      "overline": "text-xs tracking-[0.2em] uppercase font-bold text-gray-500"
+    }
+  },
+  "layout_and_spacing": {
+    "general": "Mobile-first approach. Use generous paddings for cards (p-6, p-8). Container width max-md for web viewing to simulate mobile frame.",
+    "bento_grid": "Use gap-4 or gap-6 for tight widget clustering in the Explore section.",
+    "navigation": "Floating glassmorphic bottom tab bar (Home, Explore, Create, Profile) with backdrop-blur-xl and 1px border-white/10.",
+    "flowchart": "Vertical timeline layout. Use absolute positioned glowing lines (w-0.5 bg-gradient-to-b from-[#D4AF37] to-transparent) to connect nodes."
+  },
+  "component_styles": {
+    "buttons": {
+      "primary": "bg-[#D4AF37] text-black font-bold rounded-full px-6 py-3 hover:-translate-y-1 shadow-[0_0_15px_rgba(212,175,55,0.3)] transition-all",
+      "secondary": "bg-white/5 text-white border border-white/10 rounded-full px-6 py-3 hover:bg-white/10 transition-all",
+      "ghost": "text-gray-300 hover:text-white px-4 py-2"
+    },
+    "cards": "bg-[#121415] border border-white/10 rounded-3xl p-6 shadow-2xl",
+    "glass_panels": "backdrop-blur-xl bg-[#1C1F22]/60 border border-white/10 rounded-3xl saturate-150",
+    "inputs": "bg-[#0A0A0A] border-white/10 rounded-xl px-4 py-3 text-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all",
+    "map": "Use dark theme map styling. Overlay UI should float above the map using glassmorphism."
+  },
+  "screens": {
+    "Auth": {
+      "layout": "Fullscreen background image with topographic map texture. Glassmorphic card in center or bottom sheet.",
+      "visuals": "topographic_map_bg for background."
+    },
+    "Home_Feed": {
+      "layout": "Vertical scroll of full-width or edge-to-edge images (max-h-[70vh]). Gradient overlay at bottom (bg-black/0 to bg-black/90) containing user info, title, and action buttons.",
+      "components": "PostCard, UserAvatar, Like/Comment floating pills."
+    },
+    "Create_Quest": {
+      "layout": "Wizard/Form interface. A list of nodes (Location, Activity) that user can add to. Connected by dashed lines.",
+      "components": "Shadcn Inputs, Floating 'Add Node' FAB."
+    },
+    "Quest_Detail": {
+      "layout": "Hero image at top. Below, a cinematic vertical flowchart. Each node is a card with photos, notes, lat/lng.",
+      "visuals": "Flowchart nodes glowing with ambient shadow. Tracing beam effect on scroll."
+    },
+    "Map_View": {
+      "layout": "Fullscreen map. Numbered pins for each stop. Horizontal scrollable bottom sheet for node details.",
+      "components": "MapBox/Google Maps (dark mode), Bottom Sheet (Glassmorphic)."
+    },
+    "Profile": {
+      "layout": "Hero user info (avatar, bio, stats like 'Traveler Rank', 'Badges'). Masonry or 2-column grid of their quests.",
+      "components": "Stats widgets (Control Room grid style), Quest Thumbnails."
+    },
+    "Explore": {
+      "layout": "Bento grid of trending quests and categories.",
+      "components": "Asymmetric bento boxes (Tetris Grid) with rich imagery and minimal text."
+    }
+  },
+  "media": {
+    "backgrounds": [
+      {
+        "id": "topographic_map_bg",
+        "url": "https://static.prod-images.emergentagent.com/jobs/8adc407e-78d5-4c4a-a0ab-529e6e00cf8a/images/a238f86d957f876ba9518cb174f6b8b214738206984cd6be59dbdcdffeaa7c3a.png",
+        "description": "Use as full-screen background for Auth and Create screens with 30% opacity."
+      },
+      {
+        "id": "flowchart_nodes_bg",
+        "url": "https://static.prod-images.emergentagent.com/jobs/8adc407e-78d5-4c4a-a0ab-529e6e00cf8a/images/3e4d92b1d8b08984b37d785cf5222b24db73fb951042ad28b1eb998936c4e9a1.png",
+        "description": "Use as ambient background texture for the Quest Detail page."
+      }
+    ],
+    "avatars": [
+      {
+        "url": "https://images.pexels.com/photos/30292516/pexels-photo-30292516.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Profile picture 1 (Adventurer)"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1662777056797-8d2ffe7fbb7f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwzfHxiYWNrcGFja2VyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzc3OTk0NDQ0fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Profile picture 2 (Backpacker)"
+      },
+      {
+        "url": "https://images.pexels.com/photos/18621124/pexels-photo-18621124.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Profile picture 3 (Explorer)"
+      }
+    ],
+    "feed_images": [
+      {
+        "url": "https://images.unsplash.com/photo-1739369984570-aff23bb45d9a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwzfHx0cmF2ZWxlciUyMG1vdW50YWluJTIwYWR2ZW50dXJlJTIwc3Vuc2V0fGVufDB8fHx8MTc3Nzk5NDQyN3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Sunset mountain view for feed post"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1739369984658-d61adfb86226?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwyfHx0cmF2ZWxlciUyMG1vdW50YWluJTIwYWR2ZW50dXJlJTIwc3Vuc2V0fGVufDB8fHx8MTc3Nzk5NDQyN3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Traveler taking photo mountain sunset"
+      },
+      {
+        "url": "https://onquest.in/_next/image?url=https%3A%2F%2Fimages.unsplash.com%2Fphoto-1469854523086-cc02fe5d8800%3Fq%3D80%26w%3D2021%26auto%3Dformat%26fit%3Dcrop&w=3840&q=75",
+        "description": "Scenic landscape from OnQuest original site"
+      }
+    ]
+  },
+  "testing": {
+    "attributes": "All interactive elements MUST include data-testid based on their role (e.g., data-testid='create-quest-btn')."
+  },
+  "icons": {
+    "library": "lucide-react",
+    "usage": "Use stroke-width 1.5 for a premium, delicate feel. Combine with absolute positioning to overlap on images where needed."
+  }
+}
