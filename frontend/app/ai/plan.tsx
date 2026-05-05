@@ -49,6 +49,7 @@ export default function AIPlan() {
   const totalSteps = 6;
   const canNext = () => {
     if (step === 0) return destination.trim().length > 1;
+    if (step === 1) return duration > 0 && duration <= 60;
     if (step === 5) return vibes.length > 0;
     return true;
   };
@@ -116,12 +117,27 @@ export default function AIPlan() {
           {step === 1 && (
             <Card>
               <Text style={styles.q}>How many days?</Text>
-              <Text style={styles.sub}>Pick a typical trip length</Text>
+              <Text style={styles.sub}>Pick a typical trip length or enter your own</Text>
               <View style={styles.chipRow}>
                 {DURATIONS.map((d) => (
                   <Chip key={d} active={duration === d} onPress={() => setDuration(d)}>{d} days</Chip>
                 ))}
               </View>
+              <Text style={[styles.sub, { marginTop: spacing.lg }]}>Or enter custom number of days</Text>
+              <TextInput
+                testID="ai-custom-days"
+                style={styles.input}
+                placeholder="e.g. 14"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="number-pad"
+                value={String(duration)}
+                onChangeText={(v) => {
+                  const num = parseInt(v.replace(/[^0-9]/g, ""), 10);
+                  if (!isNaN(num) && num > 0 && num <= 60) setDuration(num);
+                  else if (v === "") setDuration(0);
+                }}
+              />
+              <Text style={styles.helper}>Selected: {duration > 0 ? `${duration} day${duration === 1 ? "" : "s"}` : "—"}</Text>
             </Card>
           )}
 
@@ -390,6 +406,7 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { color: colors.text, fontWeight: "700" },
   chipTextActive: { color: "#000" },
+  helper: { color: colors.primary, fontWeight: "700", marginTop: spacing.sm, fontSize: 12, letterSpacing: 0.5 },
   error: { color: colors.danger, marginVertical: spacing.sm },
   actionsRow: { flexDirection: "row", gap: 10, marginTop: spacing.md },
   primaryBtn: {
