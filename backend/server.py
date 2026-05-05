@@ -333,6 +333,196 @@ async def popular_destinations(limit: int = 12):
     ]
     return await db.quests.aggregate(pipeline).to_list(length=limit)
 
+@api_router.get("/leaderboard")
+async def leaderboard(limit: int = 20):
+    # QP = 5 per quest + 2 per stop + 1 per like received
+    pipeline = [
+        {"$group": {
+            "_id": "$user_id",
+            "quest_count": {"$sum": 1},
+            "stops": {"$sum": {"$size": {"$ifNull": ["$nodes", []]}}},
+            "likes": {"$sum": {"$size": {"$ifNull": ["$likes", []]}}},
+        }},
+        {"$addFields": {"qp": {"$add": [
+            {"$multiply": ["$quest_count", 5]},
+            {"$multiply": ["$stops", 2]},
+            "$likes",
+        ]}}},
+        {"$sort": {"qp": -1}},
+        {"$limit": limit},
+    ]
+    rows = await db.quests.aggregate(pipeline).to_list(length=limit)
+    out = []
+    for i, r in enumerate(rows):
+        u = await db.users.find_one({"id": r["_id"]}, {"_id": 0, "password_hash": 0})
+        if not u:
+            continue
+        rank = i + 1
+        rank_label = "Master" if r["qp"] >= 100 else ("Pro" if r["qp"] >= 50 else "Novice")
+        out.append({
+            "rank": rank,
+            "user": _public_user(u),
+            "qp": r["qp"],
+            "quest_count": r["quest_count"],
+            "stops": r["stops"],
+            "likes": r["likes"],
+            "rank_label": rank_label,
+        })
+    return out
+
+@api_router.get("/search")
+async def search(q: str = "", limit: int = 30):
+    if not q.strip():
+        return []
+    regex = {"$regex": q.strip(), "$options": "i"}
+    cursor = db.quests.find({
+        "$or": [
+            {"title": regex},
+            {"description": regex},
+            {"nodes.location_name": regex},
+            {"nodes.title": regex},
+        ]
+    }, {"_id": 0}).limit(limit)
+    quests = await cursor.to_list(length=limit)
+    return [await _enrich_quest(qd) for qd in quests]
+
+@api_router.get("/recommendations")
+async def recommendations(limit: int = 10):
+    # Simple: return latest quests sorted by recency. Could be personalized later.
+    cursor = db.quests.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+    quests = await cursor.to_list(length=limit)
+    return [await _enrich_quest(qd) for qd in quests]
+
+class TripPlanIn(BaseModel):
+    destination: str
+    duration_days: int = 3
+    budget: str = "Mid"  # Low | Mid | Premium | Luxury
+    transport: str = "Mixed"  # Flight | Train | Road Trip | Mixed
+    group_type: str = "Solo"  # Solo | Couple | Family | Friends | Workation
+    vibes: List[str] = []  # Adventure, Food, Calm, Beach, Mountains, Heritage, Nightlife, Workation
+    notes: str = ""
+
+@api_router.post("/ai/plan-trip")
+async def plan_trip(payload: TripPlanIn):
+    dest = payload.destination.strip()
+    if not dest:
+        raise HTTPException(status_code=400, detail="Destination is required")
+
+    # 1. Find matching quests in our DB
+    regex = {"$regex": dest, "$options": "i"}
+    matches_cursor = db.quests.find({
+        "$or": [
+            {"title": regex},
+            {"description": regex},
+            {"nodes.location_name": regex},
+            {"nodes.title": regex},
+        ]
+    }, {"_id": 0}).limit(6)
+    matched_raw = await matches_cursor.to_list(length=6)
+    matched_quests = [await _enrich_quest(q) for q in matched_raw]
+
+    # 2. Build context for AI
+    community_context = ""
+    if matched_quests:
+        lines = []
+        for mq in matched_quests[:4]:
+            stops = "; ".join([n.get("title", "") for n in mq.get("nodes", [])[:6]])
+            lines.append(f"- '{mq.get('title','')}' by {mq['author']['name']}: {stops}")
+        community_context = "\n".join(lines)
+
+    vibes_str = ", ".join(payload.vibes) if payload.vibes else "balanced"
+    prompt = f"""You are an expert travel planner for the OnQuest app.
+Create a concise, exciting day-by-day itinerary in JSON.
+
+Trip:
+- Destination: {dest}
+- Duration: {payload.duration_days} days
+- Budget: {payload.budget}
+- Transport preference: {payload.transport}
+- Travelling as: {payload.group_type}
+- Vibes: {vibes_str}
+- Extra notes: {payload.notes or 'none'}
+
+Community quests already covering this destination (use these for inspiration and reference):
+{community_context or '- (none yet)'}
+
+Respond with ONLY valid JSON in this exact shape (no markdown, no extra text):
+{{
+  "headline": "string, 6-10 words",
+  "best_time": "string, e.g. 'October to February'",
+  "estimated_cost": "string, e.g. 'INR 12,000-18,000 per person'",
+  "days": [
+    {{"day": 1, "title": "string", "stops": [{{"name":"string","kind":"place|activity|food|stay","note":"1 sentence"}}]}}
+  ],
+  "tips": ["3-5 short helpful tips"]
+}}
+Keep the response under 250 words total. Only return JSON."""
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=f"trip-plan-{uuid.uuid4()}",
+            system_message="You are a travel planning AI. Respond with valid JSON only.",
+        ).with_model("gemini", "gemini-2.5-flash")
+        resp = await chat.send_message(UserMessage(text=prompt))
+        text = str(resp).strip()
+        # strip code fences if present
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        import json as _json
+        try:
+            ai_plan = _json.loads(text)
+        except Exception:
+            ai_plan = {"headline": f"Your {dest} adventure", "best_time": "Year-round", "estimated_cost": "Varies", "days": [], "tips": [text[:240]]}
+    except Exception as e:
+        logger.exception("AI plan failed")
+        ai_plan = {"headline": f"Your {dest} adventure", "best_time": "Year-round", "estimated_cost": "Varies", "days": [], "tips": [f"AI service unavailable: {e}"]}
+
+    # 3. Sponsored / monetization placeholders
+    sponsors = [
+        {
+            "id": "flights",
+            "category": "Flights",
+            "title": f"Cheap flights to {dest}",
+            "subtitle": "From INR 3,499 onwards",
+            "cta": "Compare fares",
+            "icon": "airplane",
+            "image": "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?q=80&w=1200&auto=format&fit=crop",
+            "url": "#",
+        },
+        {
+            "id": "hotels",
+            "category": "Stays",
+            "title": f"Top-rated stays in {dest}",
+            "subtitle": "Book hotels & homestays",
+            "cta": "View options",
+            "icon": "bed",
+            "image": "https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=1200&auto=format&fit=crop",
+            "url": "#",
+        },
+        {
+            "id": "local",
+            "category": "Local Businesses",
+            "title": f"Featured cafes & guides in {dest}",
+            "subtitle": "Verified local partners",
+            "cta": "Discover",
+            "icon": "storefront",
+            "image": "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?q=80&w=1200&auto=format&fit=crop",
+            "url": "#",
+        },
+    ]
+
+    return {
+        "input": payload.dict(),
+        "matched_quests": matched_quests,
+        "ai_plan": ai_plan,
+        "sponsors": sponsors,
+    }
+
 @api_router.get("/users/{user_id}")
 async def get_user(user_id: str):
     u = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
