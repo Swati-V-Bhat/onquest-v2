@@ -1,9 +1,11 @@
 import React from "react";
 import { Tabs, Redirect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Image } from "react-native";
 import { useAuth } from "../../src/auth";
 import { colors } from "../../src/theme";
+
+const questIcon = require("../../assets/images/quest-icon.png");
 
 export default function TabsLayout() {
   const { user } = useAuth();
@@ -58,7 +60,13 @@ export default function TabsLayout() {
         name="quest"
         options={{
           title: "Quest",
-          tabBarIcon: ({ color, size }) => <Ionicons name="compass" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => (
+            <Image
+              source={questIcon}
+              style={{ width: size + 4, height: size + 4, tintColor: color }}
+              resizeMode="contain"
+            />
+          ),
         }}
       />
       <Tabs.Screen
