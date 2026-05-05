@@ -123,16 +123,25 @@ export default function Explore() {
           <>
             <ImageBackground source={{ uri: HERO }} style={styles.hero} imageStyle={styles.heroImg}>
               <View style={styles.heroOverlay} />
-              <TouchableOpacity
-                testID="ai-plan-cta"
-                style={styles.aiCta}
-                onPress={() => router.push("/ai/plan")}
-                activeOpacity={0.9}
-              >
-                <View style={styles.aiCtaIcon}><Ionicons name="bulb" size={18} color="#000" /></View>
-                <Text style={styles.aiCtaText}>Plan Your Trip with AI</Text>
-                <Ionicons name="arrow-forward" size={18} color={colors.text} />
-              </TouchableOpacity>
+              <View style={styles.heroContent}>
+                <View style={styles.aiBadge}>
+                  <Ionicons name="sparkles" size={11} color={colors.primary} />
+                  <Text style={styles.aiBadgeText}>RECOMMENDATION ENGINE</Text>
+                </View>
+                <Text style={styles.aiHeroText}>
+                  Plan your trip using journeys from real travelers — curated by our custom recommendation engine.
+                </Text>
+                <TouchableOpacity
+                  testID="ai-plan-cta"
+                  style={styles.aiCta}
+                  onPress={() => router.push("/ai/plan")}
+                  activeOpacity={0.9}
+                >
+                  <View style={styles.aiCtaIcon}><Ionicons name="bulb" size={18} color="#000" /></View>
+                  <Text style={styles.aiCtaText}>Plan Your Trip with AI</Text>
+                  <Ionicons name="arrow-forward" size={18} color={colors.text} />
+                </TouchableOpacity>
+              </View>
             </ImageBackground>
 
             <SectionHeader title="Trending Quests" sub="What other travelers are up to this week" />
@@ -304,17 +313,27 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, color: colors.text, fontSize: 14 },
   hero: {
-    height: 280, marginHorizontal: spacing.md, marginTop: spacing.md,
+    height: 300, marginHorizontal: spacing.md, marginTop: spacing.md,
     borderRadius: radius.xl, overflow: "hidden", justifyContent: "flex-end",
   },
   heroImg: { borderRadius: radius.xl },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
+  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)" },
+  heroContent: { padding: spacing.md, justifyContent: "flex-end" },
+  aiBadge: {
+    flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start",
+    backgroundColor: "rgba(0,0,0,0.65)", paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
+  },
+  aiBadgeText: { color: colors.primary, fontWeight: "800", fontSize: 10, letterSpacing: 1.4 },
+  aiHeroText: {
+    color: colors.text, fontSize: 17, fontWeight: "800", letterSpacing: -0.3,
+    marginTop: spacing.sm, lineHeight: 23,
+  },
   aiCta: {
     flexDirection: "row", alignItems: "center", gap: 12,
     backgroundColor: "#fff",
-    margin: spacing.md, paddingVertical: 14, paddingHorizontal: 18,
+    marginTop: spacing.md, paddingVertical: 14, paddingHorizontal: 18,
     borderRadius: radius.pill,
-    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 },
   },
   aiCtaIcon: {
     width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primary,
