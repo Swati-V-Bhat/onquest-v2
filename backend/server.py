@@ -207,6 +207,21 @@ async def _enrich_quest(q: dict) -> dict:
 async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
     quest_id = str(uuid.uuid4())
 
+    # Cap photos to avoid exceeding MongoDB 16MB document size.
+    # Hard cap: 4 photos per entry, 1 cover photo per quest.
+    MAX_PHOTO_BYTES = 600_000  # ~ 450KB raw image per base64
+
+    def _trim_photos(photos: List[str]) -> List[str]:
+        out = []
+        for p in (photos or [])[:4]:
+            if isinstance(p, str) and len(p) <= MAX_PHOTO_BYTES * 1.4:
+                out.append(p)
+        return out
+
+    cover = payload.cover_photo_base64 or ""
+    if cover and len(cover) > MAX_PHOTO_BYTES * 1.4:
+        cover = ""  # drop oversized cover silently
+
     # Normalize days/entries
     days_out = []
     derived_nodes = []
@@ -222,8 +237,8 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
                 ent["order"] = ei
                 if not ent.get("id"):
                     ent["id"] = str(uuid.uuid4())
+                ent["photos"] = _trim_photos(ent.get("photos", []))
                 entries_out.append(ent)
-                # Mirror to flat nodes for legacy search/maps
                 derived_nodes.append({
                     "id": str(uuid.uuid4()),
                     "title": ent.get("title", ""),
@@ -239,7 +254,6 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
             days_out.append(day)
         nodes_for_doc = derived_nodes
     else:
-        # legacy nodes path
         nodes_for_doc = []
         for i, n in enumerate(payload.nodes):
             nd = n.dict()
@@ -255,8 +269,8 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
         "user_id": user["id"],
         "title": payload.title,
         "description": payload.description,
-        "cover_photo_base64": payload.cover_photo_base64,
-        "tags": [t for t in (payload.tags or []) if t],
+        "cover_photo_base64": cover,
+        "tags": [t for t in (payload.tags or []) if t][:30],
         "visibility": visibility,
         "days": days_out,
         "nodes": nodes_for_doc,
@@ -265,7 +279,11 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
         "comments": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    await db.quests.insert_one(doc)
+    try:
+        await db.quests.insert_one(doc)
+    except Exception as e:
+        logger.exception("create_quest insert failed")
+        raise HTTPException(status_code=413, detail="Quest is too large. Try fewer / smaller photos.")
     doc.pop("_id", None)
     enriched = await _enrich_quest(doc)
     return enriched

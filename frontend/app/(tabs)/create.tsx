@@ -9,12 +9,12 @@ import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import api from "../../src/api";
+import { pickAndCompress } from "../../src/imagePick";
 import { colors, spacing, radius } from "../../src/theme";
 
 const PRESET_TAGS = [
-  "Spiritual", "Adventurous", "Picturesque", "Foodie", "Beach",
-  "Mountain", "Heritage", "Wildlife", "Workation", "Nightlife",
-  "Family", "Solo", "Budget", "Luxury", "Road Trip",
+  "Adventurous", "Spiritual", "Picturesque",
+  "Foodie", "Heritage", "Road Trip",
 ];
 
 const VISIBILITY_OPTIONS = [
@@ -64,13 +64,24 @@ export default function Create() {
   const [description, setDescription] = useState("");
   const [coverBase64, setCoverBase64] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [customTagInput, setCustomTagInput] = useState("");
+  const [tripDays, setTripDays] = useState(3);
   const [visibility, setVisibility] = useState<"public" | "private" | "friends">("public");
 
-  // Step 2 — days
-  const [days, setDays] = useState<Day[]>([
-    { id: newId(), title: "", description: "", date: "", entries: [] },
-  ]);
+  // Step 2 — days (auto-created from tripDays)
+  const [days, setDays] = useState<Day[]>([]);
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
+
+  // Initialize days from tripDays when entering step 2
+  useEffect(() => {
+    if (step === 1 && days.length === 0) {
+      const initial = Array.from({ length: Math.max(1, tripDays) }, () => ({
+        id: newId(), title: "", description: "", date: "", entries: [],
+      }));
+      setDays(initial);
+      setOpenDays(Object.fromEntries(initial.map((d, i) => [d.id, i === 0])));
+    }
+  }, [step, tripDays, days.length]);
 
   // Entry editor modal
   const [entryEditor, setEntryEditor] = useState<{ dayId: string; entry: Entry } | null>(null);
@@ -78,15 +89,22 @@ export default function Create() {
   const [submitting, setSubmitting] = useState(false);
 
   const pickCover = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"], base64: true, quality: 0.6,
-    });
-    if (!res.canceled && res.assets[0]?.base64) setCoverBase64(res.assets[0].base64);
+    const arr = await pickAndCompress({ multi: false, maxWidth: 1200, quality: 0.6 });
+    if (arr.length > 0) setCoverBase64(arr[0]);
   };
 
   const toggleTag = (t: string) => {
     setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
   };
+
+  const addCustomTags = () => {
+    const items = customTagInput.split(",").map((s) => s.trim()).filter(Boolean);
+    if (items.length === 0) return;
+    setTags((p) => Array.from(new Set([...p, ...items])));
+    setCustomTagInput("");
+  };
+
+  const removeTag = (t: string) => setTags((p) => p.filter((x) => x !== t));
 
   const addDay = () => {
     const d: Day = { id: newId(), title: "", description: "", date: "", entries: [] };
@@ -212,7 +230,7 @@ export default function Create() {
               multiline value={description} onChangeText={setDescription} />
 
             <Text style={styles.label}>Tags</Text>
-            <Text style={styles.helpText}>Pick what describes your trip best</Text>
+            <Text style={styles.helpText}>Pick the obvious ones</Text>
             <View style={styles.chipRow}>
               {PRESET_TAGS.map((t) => (
                 <TouchableOpacity key={t} onPress={() => toggleTag(t)}
@@ -221,6 +239,59 @@ export default function Create() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <Text style={[styles.helpText, { marginTop: spacing.md }]}>Or add your own (comma-separated)</Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TextInput
+                testID="custom-tag-input"
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                placeholder="e.g. Bullet ride, Vegan food, Stargazing"
+                placeholderTextColor={colors.textMuted}
+                value={customTagInput}
+                onChangeText={setCustomTagInput}
+                onSubmitEditing={addCustomTags}
+                returnKeyType="done"
+              />
+              <TouchableOpacity testID="add-tag-btn" style={styles.addTagBtn} onPress={addCustomTags}>
+                <Ionicons name="add" size={20} color="#000" />
+              </TouchableOpacity>
+            </View>
+            {tags.length > 0 && (
+              <View style={[styles.chipRow, { marginTop: spacing.sm }]}>
+                {tags.map((t) => (
+                  <View key={t} style={[styles.chip, styles.chipActive, { paddingRight: 8, flexDirection: "row", alignItems: "center", gap: 4 }]}>
+                    <Text style={[styles.chipText, styles.chipTextActive]}>{t}</Text>
+                    <TouchableOpacity onPress={() => removeTag(t)}>
+                      <Ionicons name="close" size={14} color="#000" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={styles.label}>Trip length</Text>
+            <Text style={styles.helpText}>Days will be auto-created in step 2</Text>
+            <View style={styles.chipRow}>
+              {[1, 2, 3, 5, 7, 10].map((d) => (
+                <TouchableOpacity key={d} onPress={() => { setTripDays(d); setDays([]); }}
+                  style={[styles.chip, tripDays === d && styles.chipActive]}>
+                  <Text style={[styles.chipText, tripDays === d && styles.chipTextActive]}>{d} day{d === 1 ? "" : "s"}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              testID="custom-days-input"
+              style={[styles.input, { marginTop: spacing.sm }]}
+              placeholder="Or enter custom (1–60)"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              value={String(tripDays || "")}
+              onChangeText={(v) => {
+                const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
+                if (!isNaN(n) && n > 0 && n <= 60) { setTripDays(n); setDays([]); }
+                else if (v === "") setTripDays(0);
+              }}
+            />
 
             <Text style={styles.label}>Visibility</Text>
             {VISIBILITY_OPTIONS.map((v) => (
@@ -237,10 +308,10 @@ export default function Create() {
               </TouchableOpacity>
             ))}
 
-            <TouchableOpacity testID="next-step-btn" disabled={!title.trim()}
-              style={[styles.primaryBtn, !title.trim() && { opacity: 0.4 }]}
+            <TouchableOpacity testID="next-step-btn" disabled={!title.trim() || tripDays < 1}
+              style={[styles.primaryBtn, (!title.trim() || tripDays < 1) && { opacity: 0.4 }]}
               onPress={() => setStep(1)}>
-              <Text style={styles.primaryBtnText}>Next: Build timeline</Text>
+              <Text style={styles.primaryBtnText}>Next: Build {tripDays}-day timeline</Text>
               <Ionicons name="arrow-forward" size={18} color="#000" />
             </TouchableOpacity>
           </ScrollView>
@@ -350,6 +421,7 @@ function DayCard(props: {
             </TouchableOpacity>
           ))}
 
+          <Text style={styles.addEntryHint}>Add to this day</Text>
           <View style={styles.addEntryRow}>
             {ENTRY_KINDS.map((k) => (
               <TouchableOpacity key={k.id} style={styles.addEntryBtn} onPress={() => onAddEntry(k.id as Entry["kind"])}>
@@ -420,12 +492,9 @@ function EntryEditor({ entry, onClose, onSave }: { entry: Entry; onClose: () => 
   }, []);
 
   const addPhoto = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"], base64: true, quality: 0.6, allowsMultipleSelection: true, selectionLimit: 5,
-    });
-    if (!res.canceled) {
-      const newPhotos = res.assets.map((a) => a.base64).filter((b): b is string => !!b);
-      setDraft((d) => ({ ...d, photos: [...d.photos, ...newPhotos] }));
+    const newPhotos = await pickAndCompress({ multi: true, maxWidth: 1100, quality: 0.55 });
+    if (newPhotos.length > 0) {
+      setDraft((d) => ({ ...d, photos: [...d.photos, ...newPhotos].slice(0, 4) }));
     }
   };
 
@@ -590,6 +659,10 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { color: colors.text, fontWeight: "700", fontSize: 13 },
   chipTextActive: { color: "#000" },
+  addTagBtn: {
+    width: 50, height: 50, borderRadius: 25, backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
+  },
   visRow: {
     flexDirection: "row", alignItems: "center", gap: 12,
     backgroundColor: colors.surface, padding: spacing.md, borderRadius: radius.lg,
@@ -628,7 +701,9 @@ const styles = StyleSheet.create({
   },
   entryTitle: { color: colors.text, fontWeight: "800" },
   entryMeta: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  addEntryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: spacing.md },
+  addEntryHint: { color: colors.textMuted, fontSize: 11, fontWeight: "800", letterSpacing: 1.2,
+    textTransform: "uppercase", marginTop: spacing.md, marginBottom: 6 },
+  addEntryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   addEntryBtn: {
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: colors.bg, paddingHorizontal: 12, paddingVertical: 9,
