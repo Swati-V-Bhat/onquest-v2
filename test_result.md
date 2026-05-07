@@ -101,3 +101,154 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Add quest owner actions (Edit/Delete/Share) to the quest detail page (only owner sees Edit/Delete; Share visible to everyone).
+  Implement a Draft Quest saving system in the create flow:
+   - Confirmation popup on exit attempt with: Save Draft / Discard Quest / Cancel
+   - "Save Draft" persists current progress (title, description, media, days, entries, dates, tags, partial content) as a Draft Quest
+   - Drafts shown in Profile under a dedicated "Draft Quests" section with continue / delete / publish actions
+   - Auto-save indicators ("Draft saved" / "Last edited X mins ago")
+   - Optional: background auto-save and restore on app restart
+
+backend:
+  - task: "Quest status field (draft/published) and exclude drafts from public feed/explore/users-quests"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Added 'status' field to QuestCreate model. POST /api/quests now accepts status='draft' | 'published' (default published). feed/explore/users/me/quests/users/{id} all filter out draft quests so they only appear on the owner's drafts list."
+        - working: true
+          agent: "testing"
+          comment: "Verified end-to-end with /app/backend_test.py against the public REACT_APP_BACKEND_URL/api. POST /quests with status='draft' returns 200 and status='draft'. POST /quests without status defaults to status='published'. The created draft is correctly hidden from /quests/feed (both for user B AND author user A), /quests/explore, /users/me/quests (author), and /users/{user_a_id}. After flipping status to 'published' via PUT, the same quest appears in /quests/feed for user B."
+
+  - task: "PUT /api/quests/{id} update endpoint (owner-only) with photo cap & nodes regen"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "New PUT endpoint accepts QuestUpdate (all optional fields). Verifies owner. Re-trims oversized photos. Re-derives 'nodes' array from days when days update. Sets 'updated_at'. Returns 403 for non-owner, 404 for missing."
+        - working: true
+          agent: "testing"
+          comment: "PUT /api/quests/{id}: owner can update title (returns updated title and updated_at timestamp); non-owner gets 403 with 'Only the author can edit this quest'; nonexistent id returns 404; status='published' update flips a draft to published and the quest immediately appears in feed."
+
+  - task: "DELETE /api/quests/{id} endpoint (owner-only)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "New DELETE endpoint. Owner-only. 403 for non-owner, 404 for missing. Removes quest entirely."
+        - working: true
+          agent: "testing"
+          comment: "DELETE /api/quests/{id}: non-owner gets 403, owner gets {ok:true}, subsequent GET /api/quests/{id} returns 404, DELETE on nonexistent id returns 404. All ownership checks pass."
+
+  - task: "GET /api/users/me/drafts endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Lists current user's drafts sorted by updated_at desc. Returns enriched quest objects."
+        - working: true
+          agent: "testing"
+          comment: "GET /api/users/me/drafts returns the author's drafts only (verified user A sees their draft, user B does not). After publishing the draft via PUT status=published, it disappears from /users/me/drafts. Returned objects include enriched author/likes/comments fields."
+
+frontend:
+  - task: "Owner actions (Edit/Delete) + Share on Quest detail page with bottom-sheet menu"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/quest/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Added share icon (top-right hero overlay) visible to everyone, plus an inline 'Share' action chip near Likes/Comments. Owner-only kebab '...' opens a bottom sheet with Edit / Share / Delete. Edit navigates to /(tabs)/create?id={questId}. Delete shows native Alert confirmation then DELETE call. Uses react-native Share API."
+
+  - task: "Draft Quest creation/editing flow with exit confirmation modal"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(tabs)/create.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Rewrote create.tsx: (1) accepts ?id= param to load existing quest or draft from API and prefill all fields (jumps to step 2). (2) Top-right Close (X) button + Android hardware back trigger an exit bottom sheet with Save Draft / Discard / Cancel. (3) Save Draft posts/puts to backend with status='draft'. (4) AsyncStorage auto-saves on every change (debounced 1.2s) under key oq_draft_local_v1. (5) On focus, if local draft exists and screen empty, shows 'Continue your last unsaved draft?' banner. (6) Header shows 'Draft saved · X ago' indicator. (7) New 'Save Draft' button in step-2 bottom bar. (8) Publish flow uses PUT if editingId set (handles both editing published quests and converting drafts to published)."
+
+  - task: "Drafts section + stats card on Profile screen"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/(tabs)/profile.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Added drafts stat box (4-up stats now). Loads /api/users/me/drafts on focus. Renders 'Draft Quests' horizontal scroller with cover image, title, days/entries count, 'Last edited X ago'. Cards have Edit (navigate to create?id), Publish (PUT status=published), and Delete (with confirm) actions."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Quest status field (draft/published) and exclude drafts from public feed/explore/users-quests"
+    - "PUT /api/quests/{id} update endpoint (owner-only) with photo cap & nodes regen"
+    - "DELETE /api/quests/{id} endpoint (owner-only)"
+    - "GET /api/users/me/drafts endpoint"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Implemented full Draft Quest workflow + Edit/Delete/Share for quest owner.
+        Backend changes (need automated testing):
+         1) POST /api/quests now accepts status='draft' (default 'published').
+         2) PUT /api/quests/{id} – owner-only update; supports partial updates including converting status from 'draft' -> 'published'.
+         3) DELETE /api/quests/{id} – owner-only deletion.
+         4) GET /api/users/me/drafts – returns user's drafts sorted by updated_at desc.
+         5) Feed/Explore/Users-quests/User-by-id all filter out drafts (drafts visible only to the owner via /users/me/drafts and /quests/{id}).
+        Please test:
+         - Auth users: aarav.sharma@onquest.in / Quest@123 (regular), admin@onquest.in / admin123 (admin)
+         - Create a draft, ensure it does NOT appear in /quests/feed for any user.
+         - Verify drafts ARE visible in /users/me/drafts for the author.
+         - Update a draft via PUT, then publish it (status=published) and verify it now shows in feed.
+         - Verify ownership protection: a different user cannot PUT or DELETE another user's quest (expect 403).
+         - Verify validation: missing quest -> 404. Invalid status values default to 'published'.
+         - Verify the existing flows (POST /quests with no status field, GET /quests/{id}, like, comment, AI summary) still work.
+    - agent: "testing"
+      message: |
+        Backend Draft + Edit/Delete suite executed via /app/backend_test.py against the public REACT_APP_BACKEND_URL/api with users aarav.sharma@onquest.in (A) and priya.iyer@onquest.in (B).
+        All 28 cases PASSED (20 spec items + 8 sanity):
+         - Draft creation, default-published creation, ownership filtering across feed/explore/users-me-quests/users-by-id, drafts-only visibility on /users/me/drafts.
+         - PUT updates title with updated_at, 403 for non-owner, 404 for nonexistent, status flip draft -> published makes it visible in feed and removes it from /users/me/drafts.
+         - DELETE: 403 for non-owner, 200 ok=true for owner, 404 after delete and on nonexistent id.
+         - Sanity: GET /quests/{id}, like (toggle on), comment, /quests/feed, /users/me/quests, /popular-destinations all 200 OK.
+        No regressions detected. Backend tasks marked working=true. No retesting needed.

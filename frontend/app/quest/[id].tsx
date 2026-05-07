@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator,
-  TextInput, Alert, KeyboardAvoidingView, Platform,
+  TextInput, Alert, KeyboardAvoidingView, Platform, Share, Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +21,8 @@ export default function QuestDetail() {
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -61,6 +63,43 @@ export default function QuestDetail() {
     } finally { setAiLoading(false); }
   };
 
+  const onShare = async () => {
+    if (!quest) return;
+    try {
+      const stops = quest.nodes?.length || 0;
+      const message = `${quest.title} — ${stops} stop${stops === 1 ? "" : "s"} on OnQuest by ${quest.author?.name || "a traveller"}.\nDiscover the full journey on OnQuest.`;
+      await Share.share({ title: quest.title, message });
+    } catch {}
+  };
+
+  const onEdit = () => {
+    setActionsOpen(false);
+    router.push({ pathname: "/(tabs)/create", params: { id: quest.id } });
+  };
+
+  const onDelete = () => {
+    setActionsOpen(false);
+    Alert.alert(
+      "Delete this quest?",
+      "This permanently removes your quest and all its stops, photos and comments. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete", style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await api.delete(`/quests/${quest.id}`);
+              router.replace("/(tabs)/feed");
+            } catch (e: any) {
+              Alert.alert("Could not delete", e?.response?.data?.detail || "Try again");
+            } finally { setDeleting(false); }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading || !quest) {
     return (
       <View style={styles.loading}><ActivityIndicator color={colors.primary} /></View>
@@ -82,9 +121,19 @@ export default function QuestDetail() {
         <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
           <View>
             <Image source={{ uri: cover }} style={styles.hero} />
-            <TouchableOpacity testID="back-btn" style={styles.backBtn} onPress={() => router.back()}>
+            <TouchableOpacity testID="back-btn" style={styles.iconBtn} onPress={() => router.back()}>
               <Ionicons name="chevron-back" size={22} color={colors.text} />
             </TouchableOpacity>
+            <View style={styles.heroActions}>
+              <TouchableOpacity testID="share-btn" style={styles.iconBtnRight} onPress={onShare}>
+                <Ionicons name="share-outline" size={20} color={colors.text} />
+              </TouchableOpacity>
+              {isAuthor && (
+                <TouchableOpacity testID="owner-menu-btn" style={styles.iconBtnRight} onPress={() => setActionsOpen(true)}>
+                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+                </TouchableOpacity>
+              )}
+            </View>
             <View style={styles.heroOverlay}>
               <View style={styles.badge}>
                 <Ionicons name="git-network-outline" size={12} color={colors.primary} />
@@ -110,6 +159,10 @@ export default function QuestDetail() {
                 <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
                 <Text style={styles.actionText}>{quest.comments_count || 0} Comments</Text>
               </View>
+              <TouchableOpacity testID="share-btn-inline" style={styles.actionBtn} onPress={onShare}>
+                <Ionicons name="share-social-outline" size={16} color={colors.text} />
+                <Text style={styles.actionText}>Share</Text>
+              </TouchableOpacity>
             </View>
 
             {points.length > 0 && (
@@ -226,6 +279,42 @@ export default function QuestDetail() {
             </View>
           </View>
         </ScrollView>
+
+        <Modal visible={actionsOpen} transparent animationType="fade" onRequestClose={() => setActionsOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.sheetBackdrop} onPress={() => setActionsOpen(false)}>
+            <View style={styles.sheet}>
+              <View style={styles.sheetGrabber} />
+              <Text style={styles.sheetTitle}>Quest options</Text>
+              <TouchableOpacity testID="action-edit" style={styles.sheetItem} onPress={onEdit}>
+                <Ionicons name="create-outline" size={20} color={colors.text} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetItemTitle}>Edit quest</Text>
+                  <Text style={styles.sheetItemDesc}>Update title, days, photos, visibility…</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity testID="action-share" style={styles.sheetItem} onPress={() => { setActionsOpen(false); onShare(); }}>
+                <Ionicons name="share-outline" size={20} color={colors.text} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetItemTitle}>Share</Text>
+                  <Text style={styles.sheetItemDesc}>Send this quest to anyone</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity testID="action-delete" style={[styles.sheetItem, styles.sheetItemDanger]} onPress={onDelete} disabled={deleting}>
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetItemTitle, { color: colors.danger }]}>Delete quest</Text>
+                  <Text style={styles.sheetItemDesc}>Permanently remove this quest</Text>
+                </View>
+                {deleting ? <ActivityIndicator color={colors.danger} size="small" /> : <Ionicons name="chevron-forward" size={18} color={colors.danger} />}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sheetCancel} onPress={() => setActionsOpen(false)}>
+                <Text style={styles.sheetCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -240,10 +329,45 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
   hero: { width: "100%", height: 320 },
-  backBtn: {
+  iconBtn: {
     position: "absolute", top: 12, left: 12, width: 40, height: 40, borderRadius: 20,
     backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border,
   },
+  heroActions: {
+    position: "absolute", top: 12, right: 12, flexDirection: "row", gap: 8,
+  },
+  iconBtnRight: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: colors.border,
+  },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: colors.surface, paddingHorizontal: spacing.md, paddingTop: 12, paddingBottom: 28,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border,
+  },
+  sheetGrabber: {
+    width: 44, height: 4, borderRadius: 2, backgroundColor: colors.border,
+    alignSelf: "center", marginBottom: spacing.md,
+  },
+  sheetTitle: {
+    color: colors.textMuted, fontSize: 11, fontWeight: "800", letterSpacing: 1.4,
+    textTransform: "uppercase", marginBottom: spacing.sm, paddingLeft: 4,
+  },
+  sheetItem: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: colors.bg, paddingHorizontal: spacing.md, paddingVertical: 14,
+    borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, marginBottom: 8,
+  },
+  sheetItemDanger: { borderColor: "rgba(255, 75, 75, 0.3)" },
+  sheetItemTitle: { color: colors.text, fontWeight: "800", fontSize: 14 },
+  sheetItemDesc: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  sheetCancel: {
+    paddingVertical: 14, alignItems: "center", marginTop: 4,
+    borderRadius: radius.pill, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border,
+  },
+  sheetCancelText: { color: colors.textSecondary, fontWeight: "800" },
   heroOverlay: {
     position: "absolute", left: 0, right: 0, bottom: 0, padding: spacing.md,
     backgroundColor: "rgba(0,0,0,0.55)",

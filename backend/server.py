@@ -135,6 +135,17 @@ class QuestCreate(BaseModel):
     visibility: str = "public"  # public | private | friends
     days: List[QuestDay] = []
     nodes: List[QuestNode] = []  # legacy support
+    status: str = "published"  # published | draft
+
+class QuestUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    cover_photo_base64: Optional[str] = None
+    tags: Optional[List[str]] = None
+    visibility: Optional[str] = None
+    days: Optional[List[QuestDay]] = None
+    nodes: Optional[List[QuestNode]] = None
+    status: Optional[str] = None  # set "published" to publish a draft
 
 class CommentCreate(BaseModel):
     text: str
@@ -263,6 +274,7 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
             nodes_for_doc.append(nd)
 
     visibility = payload.visibility if payload.visibility in ("public", "private", "friends") else "public"
+    status = payload.status if payload.status in ("published", "draft") else "published"
 
     doc = {
         "id": quest_id,
@@ -272,12 +284,14 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
         "cover_photo_base64": cover,
         "tags": [t for t in (payload.tags or []) if t][:30],
         "visibility": visibility,
+        "status": status,
         "days": days_out,
         "nodes": nodes_for_doc,
         "ai_summary": "",
         "likes": [],
         "comments": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
         await db.quests.insert_one(doc)
@@ -288,13 +302,121 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
     enriched = await _enrich_quest(doc)
     return enriched
 
+@api_router.put("/quests/{quest_id}")
+async def update_quest(quest_id: str, payload: QuestUpdate, user=Depends(get_current_user)):
+    q = await db.quests.find_one({"id": quest_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(status_code=404, detail="Quest not found")
+    if q.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the author can edit this quest")
+
+    MAX_PHOTO_BYTES = 600_000
+
+    def _trim_photos(photos: List[str]) -> List[str]:
+        out = []
+        for p in (photos or [])[:4]:
+            if isinstance(p, str) and len(p) <= MAX_PHOTO_BYTES * 1.4:
+                out.append(p)
+        return out
+
+    update: dict = {}
+    if payload.title is not None:
+        update["title"] = payload.title
+    if payload.description is not None:
+        update["description"] = payload.description
+    if payload.cover_photo_base64 is not None:
+        cover = payload.cover_photo_base64
+        if cover and len(cover) > MAX_PHOTO_BYTES * 1.4:
+            cover = ""
+        update["cover_photo_base64"] = cover
+    if payload.tags is not None:
+        update["tags"] = [t for t in payload.tags if t][:30]
+    if payload.visibility is not None:
+        update["visibility"] = payload.visibility if payload.visibility in ("public", "private", "friends") else "public"
+    if payload.status is not None:
+        update["status"] = payload.status if payload.status in ("published", "draft") else "published"
+
+    derived_nodes = []
+    if payload.days is not None:
+        days_out = []
+        for di, d in enumerate(payload.days):
+            day = d.dict()
+            day["order"] = di
+            if not day.get("id"):
+                day["id"] = str(uuid.uuid4())
+            entries_out = []
+            for ei, e in enumerate(d.entries):
+                ent = e.dict()
+                ent["order"] = ei
+                if not ent.get("id"):
+                    ent["id"] = str(uuid.uuid4())
+                ent["photos"] = _trim_photos(ent.get("photos", []))
+                entries_out.append(ent)
+                derived_nodes.append({
+                    "id": str(uuid.uuid4()),
+                    "title": ent.get("title", ""),
+                    "description": ent.get("description", ""),
+                    "type": ent.get("kind", "place"),
+                    "photo_base64": (ent.get("photos") or [""])[0] if ent.get("photos") else "",
+                    "lat": ent.get("lat"),
+                    "lng": ent.get("lng"),
+                    "location_name": ent.get("location_name", ""),
+                    "order": len(derived_nodes),
+                })
+            day["entries"] = entries_out
+            days_out.append(day)
+        update["days"] = days_out
+        update["nodes"] = derived_nodes
+    elif payload.nodes is not None:
+        nodes_for_doc = []
+        for i, n in enumerate(payload.nodes):
+            nd = n.dict()
+            nd["order"] = i
+            if not nd.get("id"):
+                nd["id"] = str(uuid.uuid4())
+            nodes_for_doc.append(nd)
+        update["nodes"] = nodes_for_doc
+
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    try:
+        await db.quests.update_one({"id": quest_id}, {"$set": update})
+    except Exception:
+        logger.exception("update_quest failed")
+        raise HTTPException(status_code=413, detail="Quest is too large. Try fewer / smaller photos.")
+
+    fresh = await db.quests.find_one({"id": quest_id}, {"_id": 0})
+    return await _enrich_quest(fresh)
+
+@api_router.delete("/quests/{quest_id}")
+async def delete_quest(quest_id: str, user=Depends(get_current_user)):
+    q = await db.quests.find_one({"id": quest_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(status_code=404, detail="Quest not found")
+    if q.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the author can delete this quest")
+    await db.quests.delete_one({"id": quest_id})
+    return {"ok": True}
+
+@api_router.get("/users/me/drafts")
+async def my_drafts(user=Depends(get_current_user)):
+    cursor = db.quests.find({"user_id": user["id"], "status": "draft"}, {"_id": 0}).sort("updated_at", -1)
+    drafts = await cursor.to_list(length=200)
+    return [await _enrich_quest(q) for q in drafts]
+
 @api_router.get("/quests/feed")
 async def feed(limit: int = 30, user=Depends(get_current_user)):
-    # Public quests + own quests (regardless of visibility)
+    # Public quests + own quests (regardless of visibility). Exclude drafts from feed entirely.
     cursor = db.quests.find({
-        "$or": [
-            {"visibility": {"$in": [None, "public"]}},
-            {"user_id": user["id"]},
+        "$and": [
+            {"$or": [
+                {"visibility": {"$in": [None, "public"]}},
+                {"user_id": user["id"]},
+            ]},
+            {"$or": [
+                {"status": {"$ne": "draft"}},
+                {"status": {"$exists": False}},
+            ]},
         ]
     }, {"_id": 0}).sort("created_at", -1).limit(limit)
     quests = await cursor.to_list(length=limit)
@@ -303,7 +425,12 @@ async def feed(limit: int = 30, user=Depends(get_current_user)):
 @api_router.get("/quests/explore")
 async def explore(limit: int = 30):
     pipeline = [
-        {"$match": {"$or": [{"visibility": {"$in": [None, "public"]}}, {"visibility": {"$exists": False}}]}},
+        {"$match": {
+            "$and": [
+                {"$or": [{"visibility": {"$in": [None, "public"]}}, {"visibility": {"$exists": False}}]},
+                {"$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}]},
+            ]
+        }},
         {"$addFields": {"likes_count": {"$size": {"$ifNull": ["$likes", []]}}}},
         {"$sort": {"likes_count": -1, "created_at": -1}},
         {"$limit": limit},
@@ -760,13 +887,19 @@ async def get_user(user_id: str):
     u = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
-    quests = await db.quests.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=100)
+    quests = await db.quests.find({
+        "user_id": user_id,
+        "$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}],
+    }, {"_id": 0}).sort("created_at", -1).to_list(length=100)
     enriched = [await _enrich_quest(q) for q in quests]
     return {"user": u, "quests": enriched}
 
 @api_router.get("/users/me/quests")
 async def my_quests(user=Depends(get_current_user)):
-    quests = await db.quests.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(length=200)
+    quests = await db.quests.find({
+        "user_id": user["id"],
+        "$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}],
+    }, {"_id": 0}).sort("created_at", -1).to_list(length=200)
     return [await _enrich_quest(q) for q in quests]
 
 # -----------------------------
