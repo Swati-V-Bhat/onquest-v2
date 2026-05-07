@@ -104,11 +104,37 @@ class QuestNode(BaseModel):
     location_name: str = ""
     order: int = 0
 
+class QuestEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    kind: str = "place"  # place | activity | stay | food
+    title: str
+    description: str = ""
+    photos: List[str] = []  # URLs or base64 strings
+    location_name: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    time: str = ""           # free-form e.g. "9:30 AM" or "Morning"
+    cost: str = ""           # free-form e.g. "INR 1,200"
+    rating: int = 0          # 0-5
+    notes: str = ""
+    order: int = 0
+
+class QuestDay(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str = ""
+    description: str = ""
+    date: str = ""           # ISO yyyy-mm-dd or free text, optional
+    order: int = 0
+    entries: List[QuestEntry] = []
+
 class QuestCreate(BaseModel):
     title: str
     description: str = ""
     cover_photo_base64: str = ""
-    nodes: List[QuestNode] = []
+    tags: List[str] = []
+    visibility: str = "public"  # public | private | friends
+    days: List[QuestDay] = []
+    nodes: List[QuestNode] = []  # legacy support
 
 class CommentCreate(BaseModel):
     text: str
@@ -180,20 +206,60 @@ async def _enrich_quest(q: dict) -> dict:
 @api_router.post("/quests")
 async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
     quest_id = str(uuid.uuid4())
-    nodes = []
-    for i, n in enumerate(payload.nodes):
-        nd = n.dict()
-        nd["order"] = i
-        if not nd.get("id"):
-            nd["id"] = str(uuid.uuid4())
-        nodes.append(nd)
+
+    # Normalize days/entries
+    days_out = []
+    derived_nodes = []
+    if payload.days:
+        for di, d in enumerate(payload.days):
+            day = d.dict()
+            day["order"] = di
+            if not day.get("id"):
+                day["id"] = str(uuid.uuid4())
+            entries_out = []
+            for ei, e in enumerate(d.entries):
+                ent = e.dict()
+                ent["order"] = ei
+                if not ent.get("id"):
+                    ent["id"] = str(uuid.uuid4())
+                entries_out.append(ent)
+                # Mirror to flat nodes for legacy search/maps
+                derived_nodes.append({
+                    "id": str(uuid.uuid4()),
+                    "title": ent.get("title", ""),
+                    "description": ent.get("description", ""),
+                    "type": ent.get("kind", "place"),
+                    "photo_base64": (ent.get("photos") or [""])[0] if ent.get("photos") else "",
+                    "lat": ent.get("lat"),
+                    "lng": ent.get("lng"),
+                    "location_name": ent.get("location_name", ""),
+                    "order": len(derived_nodes),
+                })
+            day["entries"] = entries_out
+            days_out.append(day)
+        nodes_for_doc = derived_nodes
+    else:
+        # legacy nodes path
+        nodes_for_doc = []
+        for i, n in enumerate(payload.nodes):
+            nd = n.dict()
+            nd["order"] = i
+            if not nd.get("id"):
+                nd["id"] = str(uuid.uuid4())
+            nodes_for_doc.append(nd)
+
+    visibility = payload.visibility if payload.visibility in ("public", "private", "friends") else "public"
+
     doc = {
         "id": quest_id,
         "user_id": user["id"],
         "title": payload.title,
         "description": payload.description,
         "cover_photo_base64": payload.cover_photo_base64,
-        "nodes": nodes,
+        "tags": [t for t in (payload.tags or []) if t],
+        "visibility": visibility,
+        "days": days_out,
+        "nodes": nodes_for_doc,
         "ai_summary": "",
         "likes": [],
         "comments": [],
@@ -205,15 +271,21 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
     return enriched
 
 @api_router.get("/quests/feed")
-async def feed(limit: int = 30):
-    cursor = db.quests.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+async def feed(limit: int = 30, user=Depends(get_current_user)):
+    # Public quests + own quests (regardless of visibility)
+    cursor = db.quests.find({
+        "$or": [
+            {"visibility": {"$in": [None, "public"]}},
+            {"user_id": user["id"]},
+        ]
+    }, {"_id": 0}).sort("created_at", -1).limit(limit)
     quests = await cursor.to_list(length=limit)
     return [await _enrich_quest(q) for q in quests]
 
 @api_router.get("/quests/explore")
 async def explore(limit: int = 30):
-    # Trending = sorted by likes count
     pipeline = [
+        {"$match": {"$or": [{"visibility": {"$in": [None, "public"]}}, {"visibility": {"$exists": False}}]}},
         {"$addFields": {"likes_count": {"$size": {"$ifNull": ["$likes", []]}}}},
         {"$sort": {"likes_count": -1, "created_at": -1}},
         {"$limit": limit},

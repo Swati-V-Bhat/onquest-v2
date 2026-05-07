@@ -138,30 +138,64 @@ export default function QuestDetail() {
               )}
             </View>
 
-            <Text style={[styles.overline, { marginTop: spacing.lg }]}>FLOWCHART</Text>
+            <Text style={[styles.overline, { marginTop: spacing.lg }]}>TIMELINE</Text>
 
-            {(quest.nodes || []).map((n: any, idx: number) => (
-              <View key={n.id} style={styles.nodeWrap}>
-                {idx > 0 && <View style={styles.connector} />}
-                <View style={[styles.node, n.type === "activity" && styles.nodeAlt]}>
-                  <View style={styles.nodeHeader}>
-                    <View style={styles.nodeBadge}><Text style={styles.nodeBadgeText}>{idx + 1}</Text></View>
-                    <Text style={styles.nodeType}>{(n.type || "place").toUpperCase()}</Text>
-                  </View>
-                  <Text style={styles.nodeTitle}>{n.title}</Text>
-                  {n.location_name ? (
-                    <View style={styles.locRow}>
-                      <Ionicons name="location-outline" size={13} color={colors.primary} />
-                      <Text style={styles.locText}>{n.location_name}</Text>
+            {(() => {
+              const days = (quest.days && quest.days.length > 0)
+                ? quest.days
+                : [{ id: "legacy", title: "", description: "", date: "", entries: (quest.nodes || []).map((n: any) => ({
+                    id: n.id, kind: n.type || "place", title: n.title, description: n.description,
+                    photos: n.photo_base64 ? [n.photo_base64] : [], location_name: n.location_name,
+                    lat: n.lat, lng: n.lng, time: "", cost: "", rating: 0, notes: "",
+                  })) }];
+              return days.map((d: any, di: number) => (
+                <View key={d.id || di} style={styles.dayBlock}>
+                  <View style={styles.dayHead}>
+                    <View style={styles.dayPill}><Text style={styles.dayPillText}>DAY {di + 1}</Text></View>
+                    <View style={{ flex: 1 }}>
+                      {d.title ? <Text style={styles.dayTitleText}>{d.title}</Text> : null}
+                      {d.date ? <Text style={styles.dayDate}>{d.date}</Text> : null}
                     </View>
-                  ) : null}
-                  {n.description ? <Text style={styles.nodeDesc}>{n.description}</Text> : null}
-                  {n.photo_base64 ? (
-                    <Image source={{ uri: n.photo_base64.startsWith("http") ? n.photo_base64 : `data:image/jpeg;base64,${n.photo_base64}` }} style={styles.nodeImg} />
-                  ) : null}
+                  </View>
+                  {d.description ? <Text style={styles.dayDescText}>{d.description}</Text> : null}
+
+                  {(d.entries || []).map((e: any, ei: number) => (
+                    <View key={e.id || ei} style={styles.entryWrap}>
+                      <View style={styles.timelineCol}>
+                        <View style={styles.timelineDot}><Ionicons name={entryIcon(e.kind)} size={11} color="#000" /></View>
+                        {ei < (d.entries.length - 1) && <View style={styles.timelineLine} />}
+                      </View>
+                      <View style={styles.entryCard}>
+                        <View style={styles.entryHeadRow}>
+                          <Text style={styles.entryKind}>{(e.kind || "place").toUpperCase()}</Text>
+                          {e.time ? <Text style={styles.entryTime}>{e.time}</Text> : null}
+                        </View>
+                        <Text style={styles.entryName}>{e.title}</Text>
+                        {e.location_name ? (
+                          <View style={styles.locRow}>
+                            <Ionicons name="location-outline" size={12} color={colors.primary} />
+                            <Text style={styles.locText} numberOfLines={1}>{e.location_name}</Text>
+                          </View>
+                        ) : null}
+                        {e.description ? <Text style={styles.entryDesc}>{e.description}</Text> : null}
+                        {(e.photos && e.photos.length > 0) && (
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.sm }} contentContainerStyle={{ gap: 8 }}>
+                            {e.photos.map((p: string, pi: number) => (
+                              <Image key={pi} source={{ uri: p.startsWith("http") ? p : `data:image/jpeg;base64,${p}` }} style={styles.entryPhoto} />
+                            ))}
+                          </ScrollView>
+                        )}
+                        <View style={styles.entryMetaRow}>
+                          {e.cost ? <View style={styles.metaPill}><Ionicons name="wallet-outline" size={11} color={colors.text} /><Text style={styles.metaText}>{e.cost}</Text></View> : null}
+                          {e.rating > 0 ? <View style={styles.metaPill}><Ionicons name="star" size={11} color={colors.primary} /><Text style={styles.metaText}>{e.rating}/5</Text></View> : null}
+                        </View>
+                        {e.notes ? <Text style={styles.entryNotes}>“{e.notes}”</Text> : null}
+                      </View>
+                    </View>
+                  ))}
                 </View>
-              </View>
-            ))}
+              ));
+            })()}
 
             <Text style={[styles.overline, { marginTop: spacing.lg }]}>COMMENTS</Text>
             {(quest.comments || []).map((c: any) => (
@@ -195,6 +229,11 @@ export default function QuestDetail() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+function entryIcon(k: string): any {
+  switch (k) { case "stay": return "bed";
+    case "food": return "restaurant"; case "activity": return "sparkles"; default: return "location"; }
 }
 
 const styles = StyleSheet.create({
@@ -263,6 +302,43 @@ const styles = StyleSheet.create({
   locText: { color: colors.textSecondary, fontSize: 12 },
   nodeDesc: { color: colors.textSecondary, marginTop: 6 },
   nodeImg: { width: "100%", height: 180, marginTop: spacing.sm, borderRadius: radius.md },
+  // Day-wise timeline
+  dayBlock: { marginTop: spacing.md },
+  dayHead: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 },
+  dayPill: {
+    backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  dayPillText: { color: "#000", fontWeight: "900", fontSize: 11, letterSpacing: 1 },
+  dayTitleText: { color: colors.text, fontWeight: "900", fontSize: 16 },
+  dayDate: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  dayDescText: { color: colors.textSecondary, marginTop: 6, lineHeight: 19 },
+  entryWrap: { flexDirection: "row", marginTop: spacing.md },
+  timelineCol: { width: 28, alignItems: "center" },
+  timelineDot: {
+    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center", marginTop: 12,
+  },
+  timelineLine: { flex: 1, width: 2, backgroundColor: colors.primarySoft, marginTop: 4 },
+  entryCard: {
+    flex: 1, backgroundColor: colors.surfaceElevated, padding: spacing.md,
+    borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+  },
+  entryHeadRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  entryKind: { color: colors.primary, fontWeight: "800", letterSpacing: 1.2, fontSize: 11 },
+  entryTime: { color: colors.textSecondary, fontSize: 12, fontWeight: "700" },
+  entryName: { color: colors.text, fontSize: 17, fontWeight: "800", marginTop: 4 },
+  entryDesc: { color: colors.textSecondary, marginTop: 6 },
+  entryPhoto: { width: 200, height: 130, borderRadius: radius.md },
+  entryMetaRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", marginTop: spacing.sm },
+  metaPill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: colors.bg, paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
+  },
+  metaText: { color: colors.text, fontSize: 11, fontWeight: "700" },
+  entryNotes: { color: colors.textSecondary, fontSize: 13, fontStyle: "italic", marginTop: spacing.sm,
+    paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: colors.primary },
   commentItem: {
     flexDirection: "row", gap: 10, padding: spacing.md, backgroundColor: colors.surface,
     borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, marginTop: spacing.sm,
