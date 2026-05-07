@@ -680,6 +680,57 @@ async def my_quests(user=Depends(get_current_user)):
     return [await _enrich_quest(q) for q in quests]
 
 # -----------------------------
+# Saved AI Trips
+# -----------------------------
+class SavedTripIn(BaseModel):
+    input: dict
+    ai_plan: dict
+    sponsors: List[dict] = []
+    matched_quest_ids: List[str] = []
+
+@api_router.post("/ai/save-trip")
+async def save_trip(payload: SavedTripIn, user=Depends(get_current_user)):
+    trip_id = str(uuid.uuid4())
+    doc = {
+        "id": trip_id,
+        "user_id": user["id"],
+        "input": payload.input,
+        "ai_plan": payload.ai_plan,
+        "sponsors": payload.sponsors,
+        "matched_quest_ids": payload.matched_quest_ids,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.saved_trips.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.get("/users/me/saved-trips")
+async def my_saved_trips(user=Depends(get_current_user)):
+    cursor = db.saved_trips.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1)
+    return await cursor.to_list(length=100)
+
+@api_router.get("/saved-trips/{trip_id}")
+async def get_saved_trip(trip_id: str, user=Depends(get_current_user)):
+    t = await db.saved_trips.find_one({"id": trip_id, "user_id": user["id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Saved trip not found")
+    # Re-fetch matched quests by id for fresh data
+    ids = t.get("matched_quest_ids", [])
+    quests = []
+    if ids:
+        raw = await db.quests.find({"id": {"$in": ids}}, {"_id": 0}).to_list(length=20)
+        quests = [await _enrich_quest(q) for q in raw]
+    t["matched_quests"] = quests
+    return t
+
+@api_router.delete("/saved-trips/{trip_id}")
+async def delete_saved_trip(trip_id: str, user=Depends(get_current_user)):
+    res = await db.saved_trips.delete_one({"id": trip_id, "user_id": user["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Saved trip not found")
+    return {"ok": True}
+
+# -----------------------------
 # Health
 # -----------------------------
 @api_router.get("/")

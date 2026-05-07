@@ -310,6 +310,27 @@ function Chip({ children, active, onPress }: { children: React.ReactNode; active
 function PlanResult({ plan, onBack, onClose }: { plan: Plan; onBack: () => void; onClose: () => void }) {
   const router = useRouter();
   const ai = plan.ai_plan;
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+
+  const onSave = async () => {
+    if (savedId) {
+      router.push(`/ai/saved/${savedId}`);
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data } = await api.post("/ai/save-trip", {
+        input: plan.input,
+        ai_plan: plan.ai_plan,
+        sponsors: plan.sponsors,
+        matched_quest_ids: (plan.matched_quests || []).map((q) => q.id),
+      });
+      setSavedId(data.id);
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || "Could not save");
+    } finally { setSaving(false); }
+  };
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xl }}>
@@ -407,7 +428,16 @@ function PlanResult({ plan, onBack, onClose }: { plan: Plan; onBack: () => void;
             </TouchableOpacity>
           ))}
 
-          <TouchableOpacity testID="save-as-quest-btn" style={[styles.primaryBtn, { marginTop: spacing.xl }]} onPress={() => router.push("/(tabs)/create")}>
+          <TouchableOpacity testID="save-trip-btn" style={[styles.primaryBtn, { marginTop: spacing.xl, backgroundColor: savedId ? colors.surface : colors.primary, borderWidth: savedId ? 1 : 0, borderColor: colors.primary }]} onPress={onSave} disabled={saving}>
+            {saving ? <ActivityIndicator color="#000" /> : (
+              <>
+                <Ionicons name={savedId ? "checkmark-circle" : "bookmark-outline"} size={18} color={savedId ? colors.primary : "#000"} />
+                <Text style={[styles.primaryBtnText, savedId && { color: colors.primary }]}>{savedId ? "Saved · View on Profile" : "Save this trip to my profile"}</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity testID="save-as-quest-btn" style={[styles.primaryBtn, { marginTop: spacing.sm }]} onPress={() => router.push("/(tabs)/create")}>
             <Ionicons name="add-circle-outline" size={18} color="#000" />
             <Text style={styles.primaryBtnText}>Build this as a Quest</Text>
           </TouchableOpacity>
