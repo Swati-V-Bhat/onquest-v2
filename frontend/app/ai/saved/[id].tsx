@@ -5,9 +5,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import api from "../../src/api";
-import QuestCard, { QuestSummary } from "../../src/QuestCard";
-import { colors, spacing, radius } from "../../src/theme";
+import api from "../../../src/api";
+import QuestCard, { QuestSummary } from "../../../src/QuestCard";
+import { colors, spacing, radius } from "../../../src/theme";
 
 const HERO = "https://images.unsplash.com/photo-1518495973542-4542c06a5843?q=80&w=1200&auto=format&fit=crop";
 
