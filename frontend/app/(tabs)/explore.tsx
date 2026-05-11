@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ImageBackground,
   TextInput, Image, ActivityIndicator, FlatList,
@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import api from "../../src/api";
 import QuestCard, { QuestSummary } from "../../src/QuestCard";
+import { cacheGet, cacheSet } from "../../src/cache";
 import { colors, spacing, radius } from "../../src/theme";
 
 const BRAND_LOGO = require("../../assets/images/quest-icon.png");
@@ -31,32 +32,38 @@ type Destination = {
 
 export default function Explore() {
   const router = useRouter();
-  const [trending, setTrending] = useState<QuestSummary[]>([]);
-  const [recommended, setRecommended] = useState<QuestSummary[]>([]);
-  const [leaderboard, setLeaderboard] = useState<LeaderRow[]>([]);
-  const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [trending, setTrending] = useState<QuestSummary[]>(() => cacheGet<QuestSummary[]>("explore:trending") || []);
+  const [recommended, setRecommended] = useState<QuestSummary[]>(() => cacheGet<QuestSummary[]>("explore:rec") || []);
+  const [leaderboard, setLeaderboard] = useState<LeaderRow[]>(() => cacheGet<LeaderRow[]>("explore:lb") || []);
+  const [destinations, setDestinations] = useState<Destination[]>(() => cacheGet<Destination[]>("explore:dest") || []);
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<QuestSummary[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cacheGet("explore:trending"));
   const [searching, setSearching] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     try {
       const [t, r, l, d] = await Promise.all([
-        api.get("/quests/explore"),
-        api.get("/recommendations"),
-        api.get("/leaderboard"),
-        api.get("/popular-destinations"),
+        api.get("/quests/explore", { signal: ctrl.signal }),
+        api.get("/recommendations", { signal: ctrl.signal }),
+        api.get("/leaderboard", { signal: ctrl.signal }),
+        api.get("/popular-destinations", { signal: ctrl.signal }),
       ]);
-      setTrending(t.data || []);
-      setRecommended(r.data || []);
-      setLeaderboard(l.data || []);
-      setDestinations(d.data || []);
-    } catch {} finally { setLoading(false); }
+      setTrending(t.data || []); cacheSet("explore:trending", t.data || [], 60);
+      setRecommended(r.data || []); cacheSet("explore:rec", r.data || [], 60);
+      setLeaderboard(l.data || []); cacheSet("explore:lb", l.data || [], 60);
+      setDestinations(d.data || []); cacheSet("explore:dest", d.data || [], 300);
+    } catch (e: any) {
+      if (e?.name === "CanceledError" || e?.code === "ERR_CANCELED") return;
+    } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => { load(); return () => abortRef.current?.abort(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); return () => abortRef.current?.abort(); }, [load]));
 
   const runSearch = async () => {
     if (!searchText.trim()) {

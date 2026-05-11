@@ -9,12 +9,15 @@ import logging
 import uuid
 import bcrypt
 import jwt
+import asyncio
+import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 
@@ -206,13 +209,63 @@ def _public_user(u: dict) -> dict:
         "bio": u.get("bio", ""),
     }
 
-async def _enrich_quest(q: dict) -> dict:
-    q.pop("_id", None)
-    user = await db.users.find_one({"id": q.get("user_id")}, {"_id": 0, "password_hash": 0})
-    q["author"] = _public_user(user) if user else {"id": "", "name": "Unknown", "avatar": ""}
-    q["likes_count"] = len(q.get("likes", []))
-    q["comments_count"] = len(q.get("comments", []))
+# ---------- Simple in-process TTL cache for hot read endpoints ----------
+_cache: dict = {}
+def _cache_get(key: str):
+    e = _cache.get(key)
+    if not e: return None
+    if e[0] < time.time(): _cache.pop(key, None); return None
+    return e[1]
+def _cache_set(key: str, value, ttl: int = 60):
+    _cache[key] = (time.time() + ttl, value)
+def _cache_bust(prefix: str = ""):
+    if not prefix:
+        _cache.clear(); return
+    for k in list(_cache.keys()):
+        if k.startswith(prefix): _cache.pop(k, None)
+
+def _strip_for_list(q: dict) -> dict:
+    """Trim heavy nested fields for list-style endpoints (feed/explore/search/etc.).
+    Keeps cover, light node coords (for map preview) and counts. Drops days, comments, ai_summary.
+    Caller is responsible for setting likes_count/comments_count before calling."""
+    q.pop("days", None)
+    q.pop("comments", None)
+    q.pop("ai_summary", None)
+    nodes = q.get("nodes", []) or []
+    q["nodes"] = [{
+        "title": n.get("title", ""),
+        "lat": n.get("lat"),
+        "lng": n.get("lng"),
+        "location_name": n.get("location_name", ""),
+        "type": n.get("type", "place"),
+    } for n in nodes[:40]]
     return q
+
+async def _enrich_quests_batch(quests: list, summary: bool = False) -> list:
+    """Single batched user fetch (vs N+1). Optional summary projection."""
+    if not quests:
+        return []
+    user_ids = list({q.get("user_id", "") for q in quests if q.get("user_id")})
+    users_map = {}
+    if user_ids:
+        cursor = db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0})
+        async for u in cursor:
+            users_map[u["id"]] = u
+    out = []
+    for q in quests:
+        q.pop("_id", None)
+        u = users_map.get(q.get("user_id"))
+        q["author"] = _public_user(u) if u else {"id": "", "name": "Unknown", "avatar": ""}
+        q["likes_count"] = len(q.get("likes", []) or [])
+        q["comments_count"] = len(q.get("comments", []) or [])
+        if summary:
+            q = _strip_for_list(q)
+        out.append(q)
+    return out
+
+async def _enrich_quest(q: dict) -> dict:
+    """Single-quest enrich (used for detail endpoints). Keeps everything."""
+    return (await _enrich_quests_batch([q], summary=False))[0]
 
 @api_router.post("/quests")
 async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
@@ -298,6 +351,7 @@ async def create_quest(payload: QuestCreate, user=Depends(get_current_user)):
     except Exception as e:
         logger.exception("create_quest insert failed")
         raise HTTPException(status_code=413, detail="Quest is too large. Try fewer / smaller photos.")
+    _cache_bust("explore:"); _cache_bust("pop:"); _cache_bust("lb:")
     doc.pop("_id", None)
     enriched = await _enrich_quest(doc)
     return enriched
@@ -385,6 +439,7 @@ async def update_quest(quest_id: str, payload: QuestUpdate, user=Depends(get_cur
         logger.exception("update_quest failed")
         raise HTTPException(status_code=413, detail="Quest is too large. Try fewer / smaller photos.")
 
+    _cache_bust("explore:"); _cache_bust("pop:"); _cache_bust("lb:")
     fresh = await db.quests.find_one({"id": quest_id}, {"_id": 0})
     return await _enrich_quest(fresh)
 
@@ -396,17 +451,20 @@ async def delete_quest(quest_id: str, user=Depends(get_current_user)):
     if q.get("user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Only the author can delete this quest")
     await db.quests.delete_one({"id": quest_id})
+    _cache_bust("explore:"); _cache_bust("pop:"); _cache_bust("lb:")
     return {"ok": True}
 
 @api_router.get("/users/me/drafts")
 async def my_drafts(user=Depends(get_current_user)):
-    cursor = db.quests.find({"user_id": user["id"], "status": "draft"}, {"_id": 0}).sort("updated_at", -1)
+    cursor = db.quests.find(
+        {"user_id": user["id"], "status": "draft"},
+        {"_id": 0, "comments": 0, "ai_summary": 0},
+    ).sort("updated_at", -1)
     drafts = await cursor.to_list(length=200)
-    return [await _enrich_quest(q) for q in drafts]
+    return await _enrich_quests_batch(drafts, summary=True)
 
 @api_router.get("/quests/feed")
 async def feed(limit: int = 30, user=Depends(get_current_user)):
-    # Public quests + own quests (regardless of visibility). Exclude drafts from feed entirely.
     cursor = db.quests.find({
         "$and": [
             {"$or": [
@@ -418,12 +476,15 @@ async def feed(limit: int = 30, user=Depends(get_current_user)):
                 {"status": {"$exists": False}},
             ]},
         ]
-    }, {"_id": 0}).sort("created_at", -1).limit(limit)
+    }, {"_id": 0, "days": 0, "comments": 0, "ai_summary": 0}).sort("created_at", -1).limit(limit)
     quests = await cursor.to_list(length=limit)
-    return [await _enrich_quest(q) for q in quests]
+    return await _enrich_quests_batch(quests, summary=True)
 
 @api_router.get("/quests/explore")
 async def explore(limit: int = 30):
+    cached = _cache_get(f"explore:{limit}")
+    if cached is not None:
+        return cached
     pipeline = [
         {"$match": {
             "$and": [
@@ -431,13 +492,15 @@ async def explore(limit: int = 30):
                 {"$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}]},
             ]
         }},
-        {"$addFields": {"likes_count": {"$size": {"$ifNull": ["$likes", []]}}}},
-        {"$sort": {"likes_count": -1, "created_at": -1}},
+        {"$addFields": {"likes_count_calc": {"$size": {"$ifNull": ["$likes", []]}}}},
+        {"$sort": {"likes_count_calc": -1, "created_at": -1}},
         {"$limit": limit},
-        {"$project": {"_id": 0}},
+        {"$project": {"_id": 0, "days": 0, "comments": 0, "ai_summary": 0, "likes_count_calc": 0}},
     ]
     quests = await db.quests.aggregate(pipeline).to_list(length=limit)
-    return [await _enrich_quest(q) for q in quests]
+    out = await _enrich_quests_batch(quests, summary=True)
+    _cache_set(f"explore:{limit}", out, ttl=60)
+    return out
 
 @api_router.get("/quests/{quest_id}")
 async def get_quest(quest_id: str):
@@ -548,35 +611,49 @@ CURATED_DESTINATIONS = [
 
 @api_router.get("/popular-destinations")
 async def popular_destinations(limit: int = 20):
-    out = []
-    for dest in CURATED_DESTINATIONS:
-        regex = {"$regex": dest["name"], "$options": "i"}
-        # count quests that have at least one node matching this destination,
-        # OR whose title/description mentions it
-        count = await db.quests.count_documents({
-            "$or": [
-                {"nodes.location_name": regex},
-                {"title": regex},
-                {"description": regex},
+    cached = _cache_get(f"pop:{limit}")
+    if cached is not None:
+        return cached
+
+    async def _count(name: str) -> int:
+        regex = {"$regex": name, "$options": "i"}
+        return await db.quests.count_documents({
+            "$and": [
+                {"$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}]},
+                {"$or": [
+                    {"nodes.location_name": regex},
+                    {"title": regex},
+                    {"description": regex},
+                ]},
             ]
         })
-        if count == 0:
+
+    counts = await asyncio.gather(*[_count(d["name"]) for d in CURATED_DESTINATIONS])
+    out = []
+    for dest, c in zip(CURATED_DESTINATIONS, counts):
+        if c == 0:
             continue
         out.append({
             "location_name": dest["name"],
-            "quest_count": count,
+            "quest_count": c,
             "sample_photo": dest["image"],
             "sample_cover": dest["image"],
             "lat": None,
             "lng": None,
         })
     out.sort(key=lambda d: -d["quest_count"])
-    return out[:limit]
+    out = out[:limit]
+    _cache_set(f"pop:{limit}", out, ttl=300)  # 5 min cache
+    return out
 
 @api_router.get("/leaderboard")
 async def leaderboard(limit: int = 20):
+    cached = _cache_get(f"lb:{limit}")
+    if cached is not None:
+        return cached
     # QP = 5 per quest + 2 per stop + 1 per like received
     pipeline = [
+        {"$match": {"$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}]}},
         {"$group": {
             "_id": "$user_id",
             "quest_count": {"$sum": 1},
@@ -592,9 +669,14 @@ async def leaderboard(limit: int = 20):
         {"$limit": limit},
     ]
     rows = await db.quests.aggregate(pipeline).to_list(length=limit)
+    user_ids = [r["_id"] for r in rows]
+    users_map = {}
+    if user_ids:
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "password_hash": 0}):
+            users_map[u["id"]] = u
     out = []
     for i, r in enumerate(rows):
-        u = await db.users.find_one({"id": r["_id"]}, {"_id": 0, "password_hash": 0})
+        u = users_map.get(r["_id"])
         if not u:
             continue
         rank = i + 1
@@ -608,6 +690,7 @@ async def leaderboard(limit: int = 20):
             "likes": r["likes"],
             "rank_label": rank_label,
         })
+    _cache_set(f"lb:{limit}", out, ttl=60)
     return out
 
 @api_router.get("/search")
@@ -616,22 +699,28 @@ async def search(q: str = "", limit: int = 30):
         return []
     regex = {"$regex": q.strip(), "$options": "i"}
     cursor = db.quests.find({
-        "$or": [
-            {"title": regex},
-            {"description": regex},
-            {"nodes.location_name": regex},
-            {"nodes.title": regex},
+        "$and": [
+            {"$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}]},
+            {"$or": [
+                {"title": regex},
+                {"description": regex},
+                {"nodes.location_name": regex},
+                {"nodes.title": regex},
+                {"tags": regex},
+            ]},
         ]
-    }, {"_id": 0}).limit(limit)
+    }, {"_id": 0, "days": 0, "comments": 0, "ai_summary": 0}).limit(limit)
     quests = await cursor.to_list(length=limit)
-    return [await _enrich_quest(qd) for qd in quests]
+    return await _enrich_quests_batch(quests, summary=True)
 
 @api_router.get("/recommendations")
 async def recommendations(limit: int = 10):
-    # Simple: return latest quests sorted by recency. Could be personalized later.
-    cursor = db.quests.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+    cursor = db.quests.find(
+        {"$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}]},
+        {"_id": 0, "days": 0, "comments": 0, "ai_summary": 0},
+    ).sort("created_at", -1).limit(limit)
     quests = await cursor.to_list(length=limit)
-    return [await _enrich_quest(qd) for qd in quests]
+    return await _enrich_quests_batch(quests, summary=True)
 
 # Static info for popular Indian destinations.
 DESTINATION_INFO = {
@@ -890,8 +979,8 @@ async def get_user(user_id: str):
     quests = await db.quests.find({
         "user_id": user_id,
         "$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}],
-    }, {"_id": 0}).sort("created_at", -1).to_list(length=100)
-    enriched = [await _enrich_quest(q) for q in quests]
+    }, {"_id": 0, "days": 0, "comments": 0, "ai_summary": 0}).sort("created_at", -1).to_list(length=100)
+    enriched = await _enrich_quests_batch(quests, summary=True)
     return {"user": u, "quests": enriched}
 
 @api_router.get("/users/me/quests")
@@ -899,8 +988,8 @@ async def my_quests(user=Depends(get_current_user)):
     quests = await db.quests.find({
         "user_id": user["id"],
         "$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}],
-    }, {"_id": 0}).sort("created_at", -1).to_list(length=200)
-    return [await _enrich_quest(q) for q in quests]
+    }, {"_id": 0, "days": 0, "comments": 0, "ai_summary": 0}).sort("created_at", -1).to_list(length=200)
+    return await _enrich_quests_batch(quests, summary=True)
 
 # -----------------------------
 # Saved AI Trips
@@ -965,7 +1054,15 @@ async def root():
 # -----------------------------
 async def seed():
     await db.users.create_index("email", unique=True)
+    await db.users.create_index("id")
+    await db.quests.create_index("id")
     await db.quests.create_index("created_at")
+    await db.quests.create_index([("user_id", 1), ("status", 1), ("updated_at", -1)])
+    await db.quests.create_index([("status", 1), ("created_at", -1)])
+    await db.quests.create_index([("visibility", 1), ("status", 1), ("created_at", -1)])
+    await db.quests.create_index("nodes.location_name")
+    await db.quests.create_index("tags")
+    await db.saved_trips.create_index([("user_id", 1), ("created_at", -1)])
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@onquest.in").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": admin_email})
@@ -1002,6 +1099,7 @@ async def on_shutdown():
 
 # Routes + middleware
 app.include_router(api_router)
+app.add_middleware(GZipMiddleware, minimum_size=512)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

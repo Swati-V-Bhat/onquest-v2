@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator,
-  TextInput, Alert, KeyboardAvoidingView, Platform, Share, Modal,
+  TextInput, Alert, KeyboardAvoidingView, Platform, Share, Modal, InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,6 +9,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import api from "../../src/api";
 import QuestMap from "../../src/QuestMap";
 import { useAuth } from "../../src/auth";
+import { cacheBust } from "../../src/cache";
 import { colors, spacing, radius } from "../../src/theme";
 
 const FALLBACK = "https://images.unsplash.com/photo-1739369984570-aff23bb45d9a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwzfHx0cmF2ZWxlciUyMG1vdW50YWluJTIwYWR2ZW50dXJlJTIwc3Vuc2V0fGVufDB8fHx8MTc3Nzk5NDQyN3ww&ixlib=rb-4.1.0&q=85";
@@ -23,15 +24,27 @@ export default function QuestDetail() {
   const [aiLoading, setAiLoading] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [mountMap, setMountMap] = useState(false);
 
   const load = useCallback(async () => {
+    const ctrl = new AbortController();
     try {
-      const { data } = await api.get(`/quests/${id}`);
+      const { data } = await api.get(`/quests/${id}`, { signal: ctrl.signal });
       setQuest(data);
     } catch {} finally { setLoading(false); }
+    return () => ctrl.abort();
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Defer heavy WebView map mount until after first paint + interactions
+  useEffect(() => {
+    if (!quest || mountMap) return;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => setMountMap(true), 80);
+    });
+    return () => handle.cancel?.();
+  }, [quest, mountMap]);
 
   const onLike = async () => {
     try {
@@ -90,6 +103,7 @@ export default function QuestDetail() {
             setDeleting(true);
             try {
               await api.delete(`/quests/${quest.id}`);
+              cacheBust("feed:"); cacheBust("explore:"); cacheBust("profile:");
               router.replace("/(tabs)/feed");
             } catch (e: any) {
               Alert.alert("Could not delete", e?.response?.data?.detail || "Try again");
@@ -169,7 +183,14 @@ export default function QuestDetail() {
               <>
                 <Text style={[styles.overline, { marginTop: spacing.md }]}>JOURNEY MAP</Text>
                 <View style={{ marginTop: spacing.sm }}>
-                  <QuestMap points={points} height={260} />
+                  {mountMap ? (
+                    <QuestMap points={points} height={260} />
+                  ) : (
+                    <View style={styles.mapPlaceholder}>
+                      <Ionicons name="map-outline" size={28} color={colors.primary} />
+                      <Text style={styles.mapPlaceholderText}>Loading map…</Text>
+                    </View>
+                  )}
                 </View>
               </>
             )}
@@ -368,6 +389,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border,
   },
   sheetCancelText: { color: colors.textSecondary, fontWeight: "800" },
+  mapPlaceholder: {
+    height: 260, borderRadius: radius.lg, alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, gap: 6,
+  },
+  mapPlaceholderText: { color: colors.textSecondary, fontWeight: "700", fontSize: 12 },
   heroOverlay: {
     position: "absolute", left: 0, right: 0, bottom: 0, padding: spacing.md,
     backgroundColor: "rgba(0,0,0,0.55)",

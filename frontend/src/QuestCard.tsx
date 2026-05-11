@@ -18,7 +18,7 @@ export type QuestSummary = {
   created_at: string;
 };
 
-export default function QuestCard({ quest }: { quest: QuestSummary }) {
+function QuestCardImpl({ quest }: { quest: QuestSummary }) {
   const router = useRouter();
   const cover = quest.cover_photo_base64
     ? (quest.cover_photo_base64.startsWith("http") ? quest.cover_photo_base64 : `data:image/jpeg;base64,${quest.cover_photo_base64}`)
@@ -66,6 +66,23 @@ export default function QuestCard({ quest }: { quest: QuestSummary }) {
     </TouchableOpacity>
   );
 }
+
+// React.memo with equality check on key fields → skip re-renders when feed list re-renders.
+function areEqual(prev: { quest: QuestSummary }, next: { quest: QuestSummary }) {
+  const a = prev.quest, b = next.quest;
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.likes_count === b.likes_count &&
+    a.comments_count === b.comments_count &&
+    a.cover_photo_base64 === b.cover_photo_base64 &&
+    (a.nodes?.length || 0) === (b.nodes?.length || 0) &&
+    a.author?.name === b.author?.name
+  );
+}
+
+const QuestCard = React.memo(QuestCardImpl, areEqual);
+export default QuestCard;
 
 const styles = StyleSheet.create({
   card: {

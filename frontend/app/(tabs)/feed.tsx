@@ -1,46 +1,62 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, FlatList, StyleSheet, RefreshControl, ActivityIndicator, TouchableOpacity, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import api from "../../src/api";
 import QuestCard, { QuestSummary } from "../../src/QuestCard";
+import { cacheGet, cacheSet } from "../../src/cache";
 import { colors, spacing, radius } from "../../src/theme";
 
+const FEED_CACHE_KEY = "feed:v1";
+const FEED_TTL = 60; // seconds
+
 export default function Feed() {
-  const [quests, setQuests] = useState<QuestSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [quests, setQuests] = useState<QuestSummary[]>(() => cacheGet<QuestSummary[]>(FEED_CACHE_KEY) || []);
+  const [loading, setLoading] = useState(() => !cacheGet<QuestSummary[]>(FEED_CACHE_KEY));
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<QuestSummary[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    // Abort any inflight request
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     try {
-      const { data } = await api.get("/quests/feed");
+      const { data } = await api.get("/quests/feed", { signal: ctrl.signal });
       setQuests(data);
-    } catch {} finally {
+      cacheSet(FEED_CACHE_KEY, data, FEED_TTL);
+    } catch (e: any) {
+      if (e?.name === "CanceledError" || e?.code === "ERR_CANCELED") return;
+    } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => {
+    // Use cache if fresh, otherwise refetch in background
+    const cached = cacheGet<QuestSummary[]>(FEED_CACHE_KEY);
+    if (cached) { setQuests(cached); setLoading(false); }
+    load();
+    return () => abortRef.current?.abort();
+  }, [load]));
 
-  const runSearch = async () => {
-    if (!searchText.trim()) {
-      setSearchResults(null);
-      return;
-    }
+  const runSearch = useCallback(async () => {
+    if (!searchText.trim()) { setSearchResults(null); return; }
     setSearching(true);
     try {
       const { data } = await api.get(`/search?q=${encodeURIComponent(searchText.trim())}`);
       setSearchResults(data || []);
     } catch { setSearchResults([]); } finally { setSearching(false); }
-  };
+  }, [searchText]);
 
   const list = searchResults !== null ? searchResults : quests;
+  const renderItem = useCallback(({ item }: { item: QuestSummary }) => <QuestCard quest={item} />, []);
+  const keyExtractor = useCallback((q: QuestSummary) => q.id, []);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -79,7 +95,7 @@ export default function Feed() {
         </Text>
       )}
 
-      {loading ? (
+      {loading && list.length === 0 ? (
         <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
       ) : list.length === 0 ? (
         <View style={styles.center}>
@@ -90,9 +106,14 @@ export default function Feed() {
         <FlatList
           testID="feed-list"
           data={list}
-          keyExtractor={(q) => q.id}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
           contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xl }}
-          renderItem={({ item }) => <QuestCard quest={item} />}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={7}
+          removeClippedSubviews
+          updateCellsBatchingPeriod={50}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
           }

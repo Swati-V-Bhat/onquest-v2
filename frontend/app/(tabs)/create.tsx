@@ -10,6 +10,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import api from "../../src/api";
 import { pickAndCompress } from "../../src/imagePick";
+import { DateInput, TimeInput, MoneyInput, isValidDate, isValidTime, isValidMoney } from "../../src/inputs";
+import { cacheBust } from "../../src/cache";
 import { colors, spacing, radius } from "../../src/theme";
 
 const PRESET_TAGS = [
@@ -318,6 +320,7 @@ export default function Create() {
       }
       setLastServerSaveAt(data.updated_at || new Date().toISOString());
       await clearLocalDraft();
+      cacheBust("profile:drafts");
       if (closeAfter) {
         setShowExitModal(false);
         resetState();
@@ -346,6 +349,27 @@ export default function Create() {
     if (!title.trim()) { Alert.alert("Add a quest title"); return; }
     const totalEntries = days.reduce((a, d) => a + d.entries.length, 0);
     if (totalEntries === 0) { Alert.alert("Add at least one entry to a day"); return; }
+
+    // Validation gating — only block publish (drafts allow partial)
+    for (let di = 0; di < days.length; di++) {
+      const d = days[di];
+      if (d.date && !isValidDate(d.date)) {
+        Alert.alert("Invalid date", `Day ${di + 1}: "${d.date}" — use DD/MM/YYYY (e.g. 12/05/2025).`);
+        return;
+      }
+      for (let ei = 0; ei < d.entries.length; ei++) {
+        const e = d.entries[ei];
+        if (e.time && !isValidTime(e.time)) {
+          Alert.alert("Invalid time", `Day ${di + 1} · Entry ${ei + 1}: "${e.time}" — use HH:MM AM/PM (e.g. 9:30 AM).`);
+          return;
+        }
+        if (e.cost && !isValidMoney(e.cost)) {
+          Alert.alert("Invalid cost", `Day ${di + 1} · Entry ${ei + 1}: "${e.cost}" — use a currency + amount (e.g. INR 500).`);
+          return;
+        }
+      }
+    }
+
     setSubmitting(true);
     try {
       const payload = buildPayload("published");
@@ -357,6 +381,7 @@ export default function Create() {
         const res = await api.post("/quests", payload);
         data = res.data;
       }
+      cacheBust("feed:"); cacheBust("explore:"); cacheBust("profile:");
       await clearLocalDraft();
       const newId = data.id;
       resetState();
@@ -675,8 +700,7 @@ function DayCard(props: {
           <TextInput style={[styles.input, { height: 70, textAlignVertical: "top" }]}
             placeholder="Day description (optional)" placeholderTextColor={colors.textMuted}
             multiline value={day.description} onChangeText={(v) => onUpdate({ description: v })} />
-          <TextInput style={styles.input} placeholder="Date (optional, e.g. 12 May 2025)"
-            placeholderTextColor={colors.textMuted} value={day.date} onChangeText={(v) => onUpdate({ date: v })} />
+          <DateInput value={day.date} onChangeText={(v) => onUpdate({ date: v })} placeholder="Date · DD/MM/YYYY (optional)" />
 
           {day.entries.map((e) => (
             <TouchableOpacity key={e.id} style={styles.entryRow} onPress={() => onEditEntry(e)} activeOpacity={0.8}>
@@ -844,13 +868,11 @@ function EntryEditor({ entry, onClose, onSave }: { entry: Entry; onClose: () => 
           <View style={{ flexDirection: "row", gap: 10 }}>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Time</Text>
-              <TextInput style={styles.input} placeholder="e.g. 9:30 AM" placeholderTextColor={colors.textMuted}
-                value={draft.time} onChangeText={(v) => setDraft((d) => ({ ...d, time: v }))} />
+              <TimeInput value={draft.time} onChangeText={(v) => setDraft((d) => ({ ...d, time: v }))} testID="entry-time" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Cost</Text>
-              <TextInput style={styles.input} placeholder="e.g. INR 500" placeholderTextColor={colors.textMuted}
-                value={draft.cost} onChangeText={(v) => setDraft((d) => ({ ...d, cost: v }))} />
+              <MoneyInput value={draft.cost} onChangeText={(v) => setDraft((d) => ({ ...d, cost: v }))} testID="entry-cost" />
             </View>
           </View>
 

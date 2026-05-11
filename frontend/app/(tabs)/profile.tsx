@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, ScrollView, ImageBackground, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import api from "../../src/api";
 import QuestCard, { QuestSummary } from "../../src/QuestCard";
 import { useAuth } from "../../src/auth";
+import { cacheGet, cacheSet, cacheBust } from "../../src/cache";
 import { colors, spacing, radius } from "../../src/theme";
 
 const TRIP_BG = "https://images.unsplash.com/photo-1518495973542-4542c06a5843?q=80&w=1200&auto=format&fit=crop";
@@ -42,25 +43,31 @@ function timeAgo(iso?: string): string {
 export default function Profile() {
   const router = useRouter();
   const { user, logout } = useAuth();
-  const [quests, setQuests] = useState<QuestSummary[]>([]);
-  const [savedTrips, setSavedTrips] = useState<SavedTrip[]>([]);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [quests, setQuests] = useState<QuestSummary[]>(() => cacheGet<QuestSummary[]>("profile:quests") || []);
+  const [savedTrips, setSavedTrips] = useState<SavedTrip[]>(() => cacheGet<SavedTrip[]>("profile:trips") || []);
+  const [drafts, setDrafts] = useState<Draft[]>(() => cacheGet<Draft[]>("profile:drafts") || []);
+  const [loading, setLoading] = useState(() => !cacheGet("profile:quests"));
+  const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     try {
       const [q, s, d] = await Promise.all([
-        api.get("/users/me/quests"),
-        api.get("/users/me/saved-trips"),
-        api.get("/users/me/drafts"),
+        api.get("/users/me/quests", { signal: ctrl.signal }),
+        api.get("/users/me/saved-trips", { signal: ctrl.signal }),
+        api.get("/users/me/drafts", { signal: ctrl.signal }),
       ]);
-      setQuests(q.data || []);
-      setSavedTrips(s.data || []);
-      setDrafts(d.data || []);
-    } catch {} finally { setLoading(false); }
+      setQuests(q.data || []); cacheSet("profile:quests", q.data || [], 60);
+      setSavedTrips(s.data || []); cacheSet("profile:trips", s.data || [], 60);
+      setDrafts(d.data || []); cacheSet("profile:drafts", d.data || [], 30);
+    } catch (e: any) {
+      if (e?.name === "CanceledError" || e?.code === "ERR_CANCELED") return;
+    } finally { setLoading(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); return () => abortRef.current?.abort(); }, [load]));
 
   const totalLikes = quests.reduce((a, q) => a + (q.likes_count || 0), 0);
 
@@ -78,6 +85,8 @@ export default function Profile() {
             try {
               await api.delete(`/quests/${d.id}`);
               setDrafts((p) => p.filter((x) => x.id !== d.id));
+              cacheBust("profile:");
+              cacheBust("feed:"); cacheBust("explore:");
             } catch (e: any) {
               Alert.alert("Could not delete", e?.response?.data?.detail || "Try again");
             }
@@ -105,6 +114,7 @@ export default function Profile() {
             try {
               await api.put(`/quests/${d.id}`, { status: "published" });
               setDrafts((p) => p.filter((x) => x.id !== d.id));
+              cacheBust("profile:"); cacheBust("feed:"); cacheBust("explore:");
               load();
               router.push(`/quest/${d.id}`);
             } catch (e: any) {
@@ -255,6 +265,11 @@ export default function Profile() {
         keyExtractor={(q) => q.id}
         contentContainerStyle={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xl }}
         renderItem={({ item }) => <QuestCard quest={item} />}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={7}
+        removeClippedSubviews
+        updateCellsBatchingPeriod={50}
         ListEmptyComponent={
           loading ? (
             <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>

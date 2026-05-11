@@ -234,21 +234,36 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        Implemented full Draft Quest workflow + Edit/Delete/Share for quest owner.
-        Backend changes (need automated testing):
-         1) POST /api/quests now accepts status='draft' (default 'published').
-         2) PUT /api/quests/{id} – owner-only update; supports partial updates including converting status from 'draft' -> 'published'.
-         3) DELETE /api/quests/{id} – owner-only deletion.
-         4) GET /api/users/me/drafts – returns user's drafts sorted by updated_at desc.
-         5) Feed/Explore/Users-quests/User-by-id all filter out drafts (drafts visible only to the owner via /users/me/drafts and /quests/{id}).
-        Please test:
-         - Auth users: aarav.sharma@onquest.in / Quest@123 (regular), admin@onquest.in / admin123 (admin)
-         - Create a draft, ensure it does NOT appear in /quests/feed for any user.
-         - Verify drafts ARE visible in /users/me/drafts for the author.
-         - Update a draft via PUT, then publish it (status=published) and verify it now shows in feed.
-         - Verify ownership protection: a different user cannot PUT or DELETE another user's quest (expect 403).
-         - Verify validation: missing quest -> 404. Invalid status values default to 'published'.
-         - Verify the existing flows (POST /quests with no status field, GET /quests/{id}, like, comment, AI summary) still work.
+        Performance/scalability pass complete. Major changes:
+
+        **Backend (server.py)**:
+        - Added GZipMiddleware (auto-compresses responses > 512B).
+        - Added MongoDB indexes on users.email (unique), users.id, quests.id, quests.created_at, quests.(user_id, status, updated_at), quests.(status, created_at), quests.(visibility, status, created_at), quests.nodes.location_name, quests.tags, saved_trips.(user_id, created_at).
+        - Replaced N+1 author fetching with single batched `$in` query via new `_enrich_quests_batch(quests, summary=True)`.
+        - List endpoints now use light projection — feed, explore, search, my_quests, my_drafts, get_user, recommendations strip `days`, `comments`, `ai_summary` and only return summary `nodes` (no base64). Massively reduces payload size.
+        - Parallelized `popular-destinations` count queries via `asyncio.gather` (was 20 sequential).
+        - In-process TTL cache for `popular-destinations` (5min), `explore` (60s), `leaderboard` (60s) — invalidated on quest create/update/delete.
+        - Cache busts wired into POST /quests, PUT /quests/{id}, DELETE /quests/{id}.
+
+        **Frontend**:
+        - New `src/cache.ts` — in-memory TTL cache with cacheGet/Set/Bust + swr helper.
+        - `QuestCard` wrapped in React.memo with custom equality function.
+        - `feed.tsx`, `explore.tsx`, `profile.tsx` now use cache + AbortController, FlatList tuning (initialNumToRender=4, maxToRenderPerBatch=4, windowSize=7, removeClippedSubviews).
+        - `quest/[id].tsx` lazy-mounts WebView Leaflet map via InteractionManager.runAfterInteractions (instant initial paint, map loads after).
+        - Cache busts on delete/edit/publish flows so feed reflects changes immediately on return.
+        - New `src/inputs.tsx` reusable DateInput / TimeInput / MoneyInput components with auto-formatting + inline validation indicators (check/error icon, red border when invalid).
+        - `create.tsx` now uses these validated inputs for day.date, entry.time, entry.cost. Publish path validates and blocks on invalid (drafts still permitted regardless).
+
+        Please retest the existing backend test suite to confirm no regressions on:
+         - POST /quests (status field, list projection)
+         - GET /quests/feed, /quests/explore, /quests/{id}, /search, /recommendations, /popular-destinations, /leaderboard
+         - PUT /quests/{id}, DELETE /quests/{id}
+         - GET /users/me/quests, /users/me/drafts, /users/{id}
+         - All auth flows
+        Note: list endpoints now return summary projection (no `days`, no `comments`, no `ai_summary`, simplified `nodes`). This is intentional. Detail endpoint /quests/{id} still returns full payload.
+
+    - agent: "testing"
+      message: "Earlier run: All 28 backend test cases passed (20 spec items + 8 sanity)."
     - agent: "testing"
       message: |
         Backend Draft + Edit/Delete suite executed via /app/backend_test.py against the public REACT_APP_BACKEND_URL/api with users aarav.sharma@onquest.in (A) and priya.iyer@onquest.in (B).
@@ -258,3 +273,30 @@ agent_communication:
          - DELETE: 403 for non-owner, 200 ok=true for owner, 404 after delete and on nonexistent id.
          - Sanity: GET /quests/{id}, like (toggle on), comment, /quests/feed, /users/me/quests, /popular-destinations all 200 OK.
         No regressions detected. Backend tasks marked working=true. No retesting needed.
+
+    - agent: "testing"
+      message: |
+        POST-PERFORMANCE-OPTIMIZATION REGRESSION RUN (GZip + indexes + summary projection + in-process caches).
+        Extended /app/backend_test.py to 47 tests; executed against public REACT_APP_BACKEND_URL/api.
+        RESULT: 47/47 PASSED. No regressions.
+
+        Auth flows (6/6):
+         - login (A,B), /auth/me, /auth/register new user, duplicate-register 400, wrong-password 401.
+
+        Draft + Edit/Delete spec (20/20): all original cases still green.
+
+        Sanity CRUD (8/8): default published create, /quests/{id} full payload (days+comments present), like toggle, comment create+list, feed, /users/me/quests, /popular-destinations.
+
+        Performance-optimization specific checks (8/8 — all NEW):
+         - P1 /search?q=goa: summary projection — 6 items, no `days`/`comments`/`ai_summary` leaked, nodes only carry {title,lat,lng,location_name,type}.
+         - P2 /recommendations: summary projection — 10 items, clean.
+         - P3 Cache bust on CREATE: warmed /quests/explore cache, created published quest, queried 400ms later → quest IS present (explore size 58→59). Cache invalidation working.
+         - P4 Cache bust on DELETE: deleted same quest, queried 400ms later → quest absent.
+         - P5 /popular-destinations cache: cold=136ms vs warm=115ms (1.18x). 2nd call hit cache (faster, marginal because Mongo is local and result is small).
+         - P6 GZip Content-Encoding: explicit `Accept-Encoding: gzip` on /quests/explore?limit=200 returns `Content-Encoding: gzip`, ~4MB gzipped body. Middleware engaged.
+         - P7 AI summary: POST /quests/{id}/ai-summary returned HTTP 200 with a valid first-person summary string. Emergent LLM key works.
+         - P8 /leaderboard: HTTP 200, 12 items.
+
+        Additional summary-projection checks built into existing list endpoints (4b, 6b, 7b, 8b, 9b): /quests/feed, /quests/explore, /users/me/quests, /users/{id}.quests, /users/me/drafts — ALL strip days/comments/ai_summary AND have lightweight nodes (no base64). Detail endpoint /quests/{id} confirmed STILL includes full days+comments+ai_summary keys (10b, S2).
+
+        Conclusion: GZip middleware, MongoDB indexes, summary projection, batched user enrich, parallelized popular-destinations + TTL caches, and cache-bust on quest create/update/delete are all working with zero functional regression. All four backend tasks remain working=true, needs_retesting=false.
