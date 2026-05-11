@@ -451,8 +451,63 @@ async def delete_quest(quest_id: str, user=Depends(get_current_user)):
     if q.get("user_id") != user["id"]:
         raise HTTPException(status_code=403, detail="Only the author can delete this quest")
     await db.quests.delete_one({"id": quest_id})
+    # Cascade — clean saves for this quest
+    await db.saved_quests.delete_many({"quest_id": quest_id})
     _cache_bust("explore:"); _cache_bust("pop:"); _cache_bust("lb:")
     return {"ok": True}
+
+@api_router.post("/quests/{quest_id}/save")
+async def save_quest(quest_id: str, user=Depends(get_current_user)):
+    q = await db.quests.find_one({"id": quest_id}, {"_id": 0, "id": 1, "user_id": 1, "status": 1})
+    if not q:
+        raise HTTPException(status_code=404, detail="Quest not found")
+    if q.get("status") == "draft":
+        raise HTTPException(status_code=400, detail="Cannot save a draft quest")
+    if q.get("user_id") == user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot save your own quest")
+    await db.saved_quests.update_one(
+        {"user_id": user["id"], "quest_id": quest_id},
+        {"$setOnInsert": {
+            "user_id": user["id"],
+            "quest_id": quest_id,
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"saved": True}
+
+@api_router.delete("/quests/{quest_id}/save")
+async def unsave_quest(quest_id: str, user=Depends(get_current_user)):
+    await db.saved_quests.delete_one({"user_id": user["id"], "quest_id": quest_id})
+    return {"saved": False}
+
+@api_router.get("/users/me/saved")
+async def my_saved_quests(user=Depends(get_current_user)):
+    saves = await db.saved_quests.find(
+        {"user_id": user["id"]}, {"_id": 0, "quest_id": 1, "saved_at": 1}
+    ).sort("saved_at", -1).to_list(length=200)
+    quest_ids = [s["quest_id"] for s in saves]
+    if not quest_ids:
+        return []
+    cursor = db.quests.find(
+        {"id": {"$in": quest_ids}, "$or": [{"status": {"$ne": "draft"}}, {"status": {"$exists": False}}]},
+        {"_id": 0, "days": 0, "comments": 0, "ai_summary": 0},
+    )
+    quests = await cursor.to_list(length=200)
+    order = {qid: i for i, qid in enumerate(quest_ids)}
+    quests.sort(key=lambda q: order.get(q.get("id"), 9999))
+    saved_at_map = {s["quest_id"]: s.get("saved_at", "") for s in saves}
+    enriched = await _enrich_quests_batch(quests, summary=True)
+    for q in enriched:
+        q["saved_at"] = saved_at_map.get(q.get("id"), "")
+    return enriched
+
+@api_router.get("/users/me/saved-ids")
+async def my_saved_ids(user=Depends(get_current_user)):
+    saves = await db.saved_quests.find(
+        {"user_id": user["id"]}, {"_id": 0, "quest_id": 1}
+    ).to_list(length=2000)
+    return [s["quest_id"] for s in saves]
 
 @api_router.get("/users/me/drafts")
 async def my_drafts(user=Depends(get_current_user)):
@@ -1063,6 +1118,9 @@ async def seed():
     await db.quests.create_index("nodes.location_name")
     await db.quests.create_index("tags")
     await db.saved_trips.create_index([("user_id", 1), ("created_at", -1)])
+    await db.saved_quests.create_index([("user_id", 1), ("saved_at", -1)])
+    await db.saved_quests.create_index([("user_id", 1), ("quest_id", 1)], unique=True)
+    await db.saved_quests.create_index("quest_id")
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@onquest.in").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": admin_email})

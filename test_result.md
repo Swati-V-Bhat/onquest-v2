@@ -172,7 +172,34 @@ backend:
           agent: "testing"
           comment: "GET /api/users/me/drafts returns the author's drafts only (verified user A sees their draft, user B does not). After publishing the draft via PUT status=published, it disappears from /users/me/drafts. Returned objects include enriched author/likes/comments fields."
 
+  - task: "Save Quest (bookmark) endpoints — POST/DELETE /quests/{id}/save, GET /users/me/saved, GET /users/me/saved-ids, cascade-on-delete"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "New endpoints: POST /quests/{id}/save (idempotent upsert into saved_quests), DELETE /quests/{id}/save (no-op if absent), GET /users/me/saved (summary projection + saved_at, sorted desc), GET /users/me/saved-ids. Validations: 400 'Cannot save your own quest', 400 'Cannot save a draft quest', 404 for unknown quest. DELETE /quests/{id} cascades into saved_quests.delete_many."
+        - working: true
+          agent: "testing"
+          comment: "All 29 cases passed via /app/saved_quests_test.py against public REACT_APP_BACKEND_URL/api with users A (aarav.sharma) and B (priya.iyer). Verified: POST save returns {saved:true}; idempotent on repeat; GET /users/me/saved returns the quest with `saved_at` field and summary projection (NO `days`, NO `comments`); GET /users/me/saved-ids returns just IDs and is per-user (B does not see A's saves); save own quest -> 400 'Cannot save your own quest'; save draft -> 400 'Cannot save a draft quest'; save nonexistent id -> 404; DELETE on saved -> {saved:false}, ID disappears from saved-ids; DELETE on non-saved is a no-op {saved:false}. CASCADE: A saved B's fresh quest, B deleted the quest, A's /users/me/saved AND /users/me/saved-ids no longer contain the deleted id (saved_quests rows physically removed). Regression on existing CRUD (POST/GET/PUT/DELETE /quests, GET feed) also green."
+
 frontend:
+  - task: "Saved Quests bookmark feature"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/quest/[id].tsx, /app/frontend/app/(tabs)/profile.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Added bookmark/Save button on Quest detail page (visible only for non-owners, hidden for author). Toggles save via POST/DELETE /api/quests/{id}/save with optimistic UI. New 'Saved Quests' horizontal scroller in Profile + 5th 'Saved' stat box. Loaded from /api/users/me/saved with cache + AbortController."
+
   - task: "Owner actions (Edit/Delete) + Share on Quest detail page with bottom-sheet menu"
     implemented: true
     working: "NA"
@@ -300,3 +327,25 @@ agent_communication:
         Additional summary-projection checks built into existing list endpoints (4b, 6b, 7b, 8b, 9b): /quests/feed, /quests/explore, /users/me/quests, /users/{id}.quests, /users/me/drafts — ALL strip days/comments/ai_summary AND have lightweight nodes (no base64). Detail endpoint /quests/{id} confirmed STILL includes full days+comments+ai_summary keys (10b, S2).
 
         Conclusion: GZip middleware, MongoDB indexes, summary projection, batched user enrich, parallelized popular-destinations + TTL caches, and cache-bust on quest create/update/delete are all working with zero functional regression. All four backend tasks remain working=true, needs_retesting=false.
+
+    - agent: "testing"
+      message: |
+        SAVE QUEST (BOOKMARK) BACKEND SUITE — /app/saved_quests_test.py against public REACT_APP_BACKEND_URL/api.
+        Users A=aarav.sharma@onquest.in, B=priya.iyer@onquest.in (passwords Quest@123).
+        RESULT: 29/29 PASSED.
+
+        Save endpoints:
+         - POST /quests/{qB}/save -> 200 {saved:true}; idempotent on second call (still {saved:true}).
+         - GET /users/me/saved -> contains qB; item has `saved_at` ISO string; summary projection confirmed (no `days`, no `comments`).
+         - GET /users/me/saved-ids -> contains qB.id; per-user isolation verified (user B does NOT see qB in their saved-ids).
+         - DELETE /quests/{qB}/save -> 200 {saved:false}; subsequent saved-ids no longer contains it; second DELETE is a no-op (still {saved:false}).
+
+        Edge validations:
+         - Save own quest -> 400 detail "Cannot save your own quest" ✓
+         - Save a draft quest -> 400 detail "Cannot save a draft quest" ✓
+         - Save nonexistent quest id -> 404 ✓
+
+        Cascade:
+         - A saved B's fresh published quest, B DELETEd the quest. A's /users/me/saved AND /users/me/saved-ids both no longer contain the deleted id (saved_quests rows removed by delete_many).
+
+        Regression on existing flows (POST /quests, GET /quests/{id}, PUT /quests/{id}, GET /quests/feed, DELETE /quests/{id}): all green. No regressions detected. New task marked working=true, needs_retesting=false.

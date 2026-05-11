@@ -46,6 +46,7 @@ export default function Profile() {
   const [quests, setQuests] = useState<QuestSummary[]>(() => cacheGet<QuestSummary[]>("profile:quests") || []);
   const [savedTrips, setSavedTrips] = useState<SavedTrip[]>(() => cacheGet<SavedTrip[]>("profile:trips") || []);
   const [drafts, setDrafts] = useState<Draft[]>(() => cacheGet<Draft[]>("profile:drafts") || []);
+  const [savedQuests, setSavedQuests] = useState<QuestSummary[]>(() => cacheGet<QuestSummary[]>("profile:saved") || []);
   const [loading, setLoading] = useState(() => !cacheGet("profile:quests"));
   const abortRef = useRef<AbortController | null>(null);
 
@@ -54,14 +55,16 @@ export default function Profile() {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      const [q, s, d] = await Promise.all([
+      const [q, s, d, sv] = await Promise.all([
         api.get("/users/me/quests", { signal: ctrl.signal }),
         api.get("/users/me/saved-trips", { signal: ctrl.signal }),
         api.get("/users/me/drafts", { signal: ctrl.signal }),
+        api.get("/users/me/saved", { signal: ctrl.signal }),
       ]);
       setQuests(q.data || []); cacheSet("profile:quests", q.data || [], 60);
       setSavedTrips(s.data || []); cacheSet("profile:trips", s.data || [], 60);
       setDrafts(d.data || []); cacheSet("profile:drafts", d.data || [], 30);
+      setSavedQuests(sv.data || []); cacheSet("profile:saved", sv.data || [], 60);
     } catch (e: any) {
       if (e?.name === "CanceledError" || e?.code === "ERR_CANCELED") return;
     } finally { setLoading(false); }
@@ -159,8 +162,12 @@ export default function Profile() {
                 <Text style={styles.statLabel}>Drafts</Text>
               </View>
               <View style={styles.statBox}>
+                <Text style={styles.statNum}>{savedQuests.length}</Text>
+                <Text style={styles.statLabel}>Saved</Text>
+              </View>
+              <View style={styles.statBox}>
                 <Text style={styles.statNum}>{savedTrips.length}</Text>
-                <Text style={styles.statLabel}>AI Trips</Text>
+                <Text style={styles.statLabel}>AI</Text>
               </View>
             </View>
 
@@ -221,6 +228,53 @@ export default function Profile() {
                             <Ionicons name="trash-outline" size={14} color={colors.danger} />
                           </TouchableOpacity>
                         </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+
+            {savedQuests.length > 0 && (
+              <>
+                <View style={styles.sectionRow}>
+                  <Ionicons name="bookmark" size={18} color={colors.primary} />
+                  <Text style={styles.sectionTitle}>Saved Quests</Text>
+                  <View style={styles.countPill}><Text style={styles.countPillText}>{savedQuests.length}</Text></View>
+                </View>
+                <Text style={styles.sectionSub}>Quests you bookmarked for later</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 8 }}>
+                  {savedQuests.map((q) => {
+                    const cover = q.cover_photo_base64
+                      ? (q.cover_photo_base64.startsWith("http") ? q.cover_photo_base64 : `data:image/jpeg;base64,${q.cover_photo_base64}`)
+                      : "https://images.unsplash.com/photo-1518495973542-4542c06a5843?q=80&w=1200&auto=format&fit=crop";
+                    return (
+                      <TouchableOpacity
+                        key={q.id}
+                        testID={`saved-quest-${q.id}`}
+                        activeOpacity={0.85}
+                        onPress={() => router.push(`/quest/${q.id}`)}
+                        style={styles.savedCard}
+                      >
+                        <ImageBackground source={{ uri: cover }} style={styles.savedImg} imageStyle={{ borderRadius: radius.lg }}>
+                          <View style={styles.tripOverlay} />
+                          <View style={styles.savedBadge}>
+                            <Ionicons name="bookmark" size={10} color={colors.primary} />
+                            <Text style={styles.savedBadgeText}>SAVED</Text>
+                          </View>
+                          <View style={styles.savedBody}>
+                            <Text style={styles.savedTitle} numberOfLines={2}>{q.title}</Text>
+                            <Text style={styles.savedMeta} numberOfLines={1}>
+                              by {q.author?.name || "Explorer"} · {q.nodes?.length || 0} stop{(q.nodes?.length || 0) === 1 ? "" : "s"}
+                            </Text>
+                            <View style={styles.savedStats}>
+                              <Ionicons name="heart" size={11} color={colors.primary} />
+                              <Text style={styles.savedStatText}>{q.likes_count}</Text>
+                              <Ionicons name="chatbubble-outline" size={11} color={colors.textSecondary} style={{ marginLeft: 8 }} />
+                              <Text style={styles.savedStatText}>{q.comments_count}</Text>
+                            </View>
+                          </View>
+                        </ImageBackground>
                       </TouchableOpacity>
                     );
                   })}
@@ -349,6 +403,23 @@ const styles = StyleSheet.create({
     width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center",
     backgroundColor: "rgba(255, 75, 75, 0.08)", borderWidth: 1, borderColor: "rgba(255, 75, 75, 0.3)",
   },
+
+  savedCard: {
+    width: 220, height: 150, borderRadius: radius.lg, overflow: "hidden",
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  savedImg: { flex: 1, justifyContent: "flex-end" },
+  savedBadge: {
+    position: "absolute", top: 10, left: 10, flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(0,0,0,0.7)", paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.primary,
+  },
+  savedBadgeText: { color: colors.primary, fontWeight: "900", fontSize: 9, letterSpacing: 1 },
+  savedBody: { padding: spacing.sm, backgroundColor: "rgba(0,0,0,0.55)" },
+  savedTitle: { color: colors.text, fontWeight: "900", fontSize: 14 },
+  savedMeta: { color: colors.textSecondary, fontSize: 11, marginTop: 3 },
+  savedStats: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  savedStatText: { color: colors.text, fontSize: 11, fontWeight: "700" },
 
   tripCard: {
     width: 240, height: 160, borderRadius: radius.lg, overflow: "hidden",

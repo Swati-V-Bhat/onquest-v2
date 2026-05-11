@@ -25,6 +25,8 @@ export default function QuestDetail() {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [mountMap, setMountMap] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savingToggle, setSavingToggle] = useState(false);
 
   const load = useCallback(async () => {
     const ctrl = new AbortController();
@@ -37,6 +39,17 @@ export default function QuestDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Load saved-state for this quest (requires auth — silently fail if not)
+  useEffect(() => {
+    if (!id || !user) return;
+    (async () => {
+      try {
+        const { data } = await api.get("/users/me/saved-ids");
+        setSaved(Array.isArray(data) && data.includes(id));
+      } catch {}
+    })();
+  }, [id, user]);
+
   // Defer heavy WebView map mount until after first paint + interactions
   useEffect(() => {
     if (!quest || mountMap) return;
@@ -45,6 +58,22 @@ export default function QuestDetail() {
     });
     return () => handle.cancel?.();
   }, [quest, mountMap]);
+
+  const toggleSave = async () => {
+    if (!user) { Alert.alert("Login required to save quests"); return; }
+    if (savingToggle) return;
+    const next = !saved;
+    setSaved(next); // optimistic
+    setSavingToggle(true);
+    try {
+      if (next) await api.post(`/quests/${id}/save`);
+      else await api.delete(`/quests/${id}/save`);
+      cacheBust("profile:saved");
+    } catch (e: any) {
+      setSaved(!next); // rollback
+      Alert.alert("Could not update", e?.response?.data?.detail || "Try again");
+    } finally { setSavingToggle(false); }
+  };
 
   const onLike = async () => {
     try {
@@ -173,6 +202,12 @@ export default function QuestDetail() {
                 <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
                 <Text style={styles.actionText}>{quest.comments_count || 0} Comments</Text>
               </View>
+              {!isAuthor && (
+                <TouchableOpacity testID="save-btn" style={[styles.actionBtn, saved && styles.actionBtnActive]} onPress={toggleSave} disabled={savingToggle}>
+                  <Ionicons name={saved ? "bookmark" : "bookmark-outline"} size={16} color={saved ? colors.primary : colors.text} />
+                  <Text style={[styles.actionText, saved && { color: colors.primary }]}>{saved ? "Saved" : "Save"}</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity testID="share-btn-inline" style={styles.actionBtn} onPress={onShare}>
                 <Ionicons name="share-social-outline" size={16} color={colors.text} />
                 <Text style={styles.actionText}>Share</Text>
@@ -419,6 +454,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, paddingHorizontal: 14, paddingVertical: 10,
     borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
   },
+  actionBtnActive: { borderColor: colors.primary, backgroundColor: "rgba(255,105,0,0.08)" },
   actionText: { color: colors.text, fontWeight: "700" },
   overline: { color: colors.primary, letterSpacing: 2, fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
   aiBox: {
